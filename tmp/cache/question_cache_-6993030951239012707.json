@@ -1,0 +1,50 @@
+{
+  "question_text": "\\documentclass[12pt]{article}\n\\usepackage{amsmath, amssymb, geometry, enumitem}\n\\usepackage[utf8]{inputenc}\n\\geometry{margin=1in}\n\\setlength{\\parskip}{6pt}\n\n\\begin{document}\n\n\\begin{center}\n\\Large \\textbf{Student Answer Sheet}\\\\\n\\normalsize \\today\n\\end{center}\n\n\\vspace{1cm}\n\n1  0  0\n1  1  1\n0  1  0\n0  0  1\n\n\\end{document}",
+  "analysis": {
+    "analysis": {
+      "file_size": 737338,
+      "image_dimensions": [
+        1241,
+        1575
+      ],
+      "estimated_pages": 4,
+      "image_quality": "medium",
+      "has_handwriting": true,
+      "confidence": 0.85
+    },
+    "strategy": {
+      "recommended_model": "openai",
+      "dpi_setting": 300,
+      "preprocessing_needed": false,
+      "retry_strategy": "fallback_model",
+      "extraction_focus": "structured_text"
+    },
+    "file_path": "uploads\\question_data\\questions_20250705_110124\\qp.pdf",
+    "file_type": "question_paper"
+  },
+  "extraction": {
+    "question_text": "\\documentclass[12pt]{article}\n\\usepackage{amsmath, amssymb, geometry, enumitem}\n\\usepackage[utf8]{inputenc}\n\\geometry{margin=1in}\n\\setlength{\\parskip}{6pt}\n\n\\begin{document}\n\n\\begin{center}\n\\Large \\textbf{Student Answer Sheet}\\\\\n\\normalsize \\today\n\\end{center}\n\n\\vspace{1cm}\n\n1  0  0\n1  1  1\n0  1  0\n0  0  1\n\n\\end{document}",
+    "model_used": "openai",
+    "validation": {
+      "is_valid": true,
+      "should_retry": false,
+      "confidence": 0.45,
+      "issues": [
+        "No clear question patterns found"
+      ]
+    },
+    "image_paths": [
+      "tmp/qp/page_1.png",
+      "tmp/qp/page_2.png",
+      "tmp/qp/page_3.png",
+      "tmp/qp/page_4.png"
+    ]
+  },
+  "strategy": {
+    "recommended_model": "openai",
+    "dpi_setting": 300,
+    "preprocessing_needed": false,
+    "retry_strategy": "fallback_model",
+    "extraction_focus": "structured_text"
+  }
+}

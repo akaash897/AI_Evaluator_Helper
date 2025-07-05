@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Answer Sheet Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 600px;
+            padding: 30px;
+        }
+        h1 {
+            color: #2d3748;
+            font-size: 2rem;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .ai-info {
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .ai-info h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+        }
+        .ai-info p {
+            margin: 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section label {
+            display: block;
+            color: #2d3748;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .options {
+            margin-bottom: 15px;
+        }
+        .options label {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 20px;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        .options input[type="radio"] {
+            margin-right: 8px;
+        }
+        .fallback-section {
+            background: #f7fafc;
+            border-left: 4px solid #ed8936;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 0 8px 8px 0;
+        }
+        .fallback-section h4 {
+            margin: 0 0 10px 0;
+            color: #2d3748;
+            font-size: 1rem;
+        }
+        .fallback-section p {
+            margin: 0 0 15px 0;
+            color: #4a5568;
+            font-size: 0.9rem;
+        }
+        .fallback-options label {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 20px;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        .file-upload {
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .file-upload:hover {
+            border-color: #667eea;
+            background: #f7fafc;
+        }
+        .file-upload input {
+            display: none;
+        }
+        .existing-selector {
+            display: none;
+            background: #f7fafc;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .existing-selector select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .student-dropdown {
+            display: none;
+            margin-top: 15px;
+        }
+        .student-dropdown select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+        }
+        .submit-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .submit-btn:hover {
+            transform: translateY(-2px);
+        }
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Agentic Answer Sheet Processor</h1>
+        
+        <div class="ai-info">
+            <h3>🎯 Intelligent AI Processing</h3>
+            <p>The system automatically selects the best AI model (OpenAI or Gemini) based on document quality analysis</p>
+        </div>
+        
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
+            <div class="fallback-section">
+                <h4>⚙️ Fallback Model Preference</h4>
+                <p>If the primary AI model fails, which model should be used as backup?</p>
+                <div class="fallback-options">
+                    <label>
+                        <input type="radio" name="fallback_model" value="gemini" checked>
+                        Google Gemini 2.0 Flash
+                    </label>
+                    <label>
+                        <input type="radio" name="fallback_model" value="openai">
+                        OpenAI GPT-4V
+                    </label>
+                </div>
+            </div>
+
+            <div class="section">
+                <label>📋 Question Paper</label>
+                <div class="options">
+                    <label>
+                        <input type="radio" name="question_option" value="new" checked>
+                        Upload New PDF
+                    </label>
+                    <label>
+                        <input type="radio" name="question_option" value="existing">
+                        Choose Existing
+                    </label>
+                </div>
+                
+                <div id="new-question-upload">
+                    <div class="file-upload" onclick="document.getElementById('question_paper').click()">
+                        <input type="file" name="question_paper" id="question_paper" accept=".pdf">
+                        📄 Click to upload question PDF
+                    </div>
+                </div>
+                
+                <div id="existing-question-selector" class="existing-selector">
+                    <select name="existing_question_folder" id="question-folder-select">
+                        <option value="">Select Question Folder</option>
+                    </select>
+                    <select name="existing_question_file" id="question-file-select">
+                        <option value="">Select Question File</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="section">
+                <label>📚 Student Answer Sheets</label>
+                <div class="options">
+                    <label>
+                        <input type="radio" name="student_option" value="new" checked>
+                        Upload New Folder
+                    </label>
+                    <label>
+                        <input type="radio" name="student_option" value="existing">
+                        Choose Existing
+                    </label>
+                </div>
+                
+                <div id="new-student-upload">
+                    <div class="file-upload" onclick="document.getElementById('student_pdfs').click()">
+                        <input type="file" name="student_pdfs" id="student_pdfs" accept=".pdf" webkitdirectory directory multiple>
+                        📚 Click to upload folder of PDFs
+                    </div>
+                    <div class="student-dropdown" id="pdf-dropdown-section">
+                        <select id="selected_student_pdf" name="selected_student_pdf">
+                            <option value="">Select a student PDF to process</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div id="existing-student-selector" class="existing-selector">
+                    <select name="existing_student_folder" id="student-folder-select">
+                        <option value="">Select Student Folder</option>
+                    </select>
+                    <select name="selected_existing_student_pdf" id="existing-student-file-select">
+                        <option value="">Select Student File</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submitBtn">
+                🚀 Process with Agentic AI
+            </button>
+        </form>
+    </div>
+
+    <script>
+        let foldersData = {};
+
+        async function loadFolders() {
+            try {
+                console.log('Loading folders...');
+                const response = await fetch('/api/folders');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                foldersData = await response.json();
+                console.log('Folders loaded:', foldersData);
+                populateFolderSelectors();
+            } catch (error) {
+                console.error('Error loading folders:', error);
+                foldersData = {question_folders: [], student_folders: []};
+                populateFolderSelectors();
+            }
+        }
+
+        function populateFolderSelectors() {
+            const questionFolderSelect = document.getElementById('question-folder-select');
+            const studentFolderSelect = document.getElementById('student-folder-select');
+
+            questionFolderSelect.innerHTML = '<option value="">Select Question Folder</option>';
+            studentFolderSelect.innerHTML = '<option value="">Select Student Folder</option>';
+
+            if (foldersData.question_folders) {
+                foldersData.question_folders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder.name;
+                    option.textContent = `${folder.name} (${folder.files.length} files)`;
+                    questionFolderSelect.appendChild(option);
+                });
+            }
+
+            if (foldersData.student_folders) {
+                foldersData.student_folders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder.name;
+                    option.textContent = `${folder.name} (${folder.files.length} files)`;
+                    studentFolderSelect.appendChild(option);
+                });
+            }
+        }
+
+        // Radio button handlers
+        document.querySelectorAll('input[name="question_option"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const newUpload = document.getElementById('new-question-upload');
+                const existingSelector = document.getElementById('existing-question-selector');
+                
+                if (this.value === 'new') {
+                    newUpload.style.display = 'block';
+                    existingSelector.style.display = 'none';
+                } else {
+                    newUpload.style.display = 'none';
+                    existingSelector.style.display = 'block';
+                }
+            });
+        });
+
+        document.querySelectorAll('input[name="student_option"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const newUpload = document.getElementById('new-student-upload');
+                const existingSelector = document.getElementById('existing-student-selector');
+                
+                if (this.value === 'new') {
+                    newUpload.style.display = 'block';
+                    existingSelector.style.display = 'none';
+                } else {
+                    newUpload.style.display = 'none';
+                    existingSelector.style.display = 'block';
+                }
+            });
+        });
+
+        // Folder selection handlers
+        document.getElementById('question-folder-select').addEventListener('change', function() {
+            const fileSelect = document.getElementById('question-file-select');
+            fileSelect.innerHTML = '<option value="">Select Question File</option>';
+            
+            if (this.value && foldersData.question_folders) {
+                const folder = foldersData.question_folders.find(f => f.name === this.value);
+                if (folder && folder.files) {
+                    folder.files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        fileSelect.appendChild(option);
+                    });
+                }
+            }
+        });
+
+        document.getElementById('student-folder-select').addEventListener('change', function() {
+            const fileSelect = document.getElementById('existing-student-file-select');
+            fileSelect.innerHTML = '<option value="">Select Student File</option>';
+            
+            if (this.value && foldersData.student_folders) {
+                const folder = foldersData.student_folders.find(f => f.name === this.value);
+                if (folder && folder.files) {
+                    folder.files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        fileSelect.appendChild(option);
+                    });
+                }
+            }
+        });
+
+        // Student file upload handler
+        document.getElementById('student_pdfs').addEventListener('change', function() {
+            const files = Array.from(this.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+            const dropdown = document.getElementById('selected_student_pdf');
+            const dropdownSection = document.getElementById('pdf-dropdown-section');
+            
+            dropdown.innerHTML = '<option value="">Select a student PDF to process</option>';
+            
+            if (files.length > 0) {
+                files.forEach(f => {
+                    const opt = document.createElement('option');
+                    const basename = f.name.split('/').pop() || f.name;
+                    opt.value = basename;
+                    opt.textContent = basename;
+                    dropdown.appendChild(opt);
+                });
+                dropdownSection.style.display = 'block';
+            } else {
+                dropdownSection.style.display = 'none';
+            }
+        });
+
+        // Form submission
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '🤖 Agentic AI Processing...';
+        });
+
+        // Load folders on page load
+        document.addEventListener('DOMContentLoaded', loadFolders);
+    </script>
+</body>
+</html>

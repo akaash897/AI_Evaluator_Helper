@@ -1,0 +1,10 @@
+protobuf
+Flask
+Werkzeug
+dotenv
+python-dotenv
+langchain
+google-generativeai
+openai
+pillow
+pdf2image
