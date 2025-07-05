@@ -50,7 +50,7 @@ if AGENTIC_AVAILABLE:
         AGENTIC_AVAILABLE = False
 
 def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
-    """Extract questions using agentic system with automatic model selection"""
+    """Extract questions using agentic system with proper model selection"""
     try:
         if AGENTIC_AVAILABLE:
             print("Using agentic system for question extraction...")
@@ -75,11 +75,13 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
                     print(f"Analysis failed: {analysis_result.error}")
                     raise Exception(f"Document analysis failed: {analysis_result.error}")
                 
-                # Use automatic model selection but fallback if needed
+                # Use the agentic system's recommendation - NO OVERRIDE
                 strategy = analysis_result.data["strategy"]
-                print(f"Agentic system recommends: {strategy['recommended_model']}")
+                recommended_model = strategy["recommended_model"]
+                print(f"Agentic system recommends: {recommended_model}")
+                print(f"Using agentic recommendation: {recommended_model}")
                 
-                # Extract questions
+                # Extract questions using the recommended model
                 extraction_task = {
                     "file_path": pdf_path,
                     "strategy": strategy
@@ -88,7 +90,36 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
                 
                 if extraction_result.success:
                     print("Agentic extraction successful!")
-                    return extraction_result.data["question_text"]
+                    question_text = extraction_result.data["question_text"]
+                    
+                    # Validate extracted questions
+                    if len(question_text.strip()) < 100:
+                        print("Warning: Question text seems too short, retrying with fallback model...")
+                        # Only now use fallback model if agentic fails
+                        strategy["recommended_model"] = fallback_model
+                        extraction_task["strategy"] = strategy
+                        retry_result = loop.run_until_complete(extractor.execute(extraction_task))
+                        if retry_result.success:
+                            question_text = retry_result.data["question_text"]
+                        else:
+                            raise Exception("Both agentic and fallback extraction failed")
+                    
+                    # Check for actual question content
+                    question_patterns = [r'Question\s+\d+', r'Q\d+', r'^\d+[\.:]\s', r'\(\w\)']
+                    has_questions = any(re.search(pattern, question_text, re.MULTILINE | re.IGNORECASE) 
+                                      for pattern in question_patterns)
+                    
+                    if not has_questions:
+                        print("Warning: No clear question patterns found, retrying with fallback model...")
+                        strategy["recommended_model"] = fallback_model
+                        extraction_task["strategy"] = strategy
+                        retry_result = loop.run_until_complete(extractor.execute(extraction_task))
+                        if retry_result.success:
+                            question_text = retry_result.data["question_text"]
+                        else:
+                            raise Exception("No clear questions found in either attempt")
+                    
+                    return question_text
                 else:
                     print(f"Agentic extraction failed: {extraction_result.error}")
                     raise Exception(f"Agentic extraction failed: {extraction_result.error}")
@@ -100,67 +131,95 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
             raise Exception("Agentic system not available")
             
     except Exception as e:
-        print(f"Agentic extraction failed, using fallback method: {e}")
-        return _original_extract_question_text(pdf_path, fallback_model)
+        print(f"Agentic extraction failed, using enhanced fallback method: {e}")
+        return _enhanced_extract_question_text(pdf_path, fallback_model)
 
-def _original_extract_question_text(pdf_path: str, model: str = "gemini"):
-    """Original question extraction method as fallback"""
+def _enhanced_extract_question_text(pdf_path: str, model: str = "gemini"):
+    """Enhanced question extraction method with better prompts"""
     try:
         print(f"Converting PDF to images: {pdf_path}")
         image_paths = pdf_to_images(pdf_path)
         print(f"Generated {len(image_paths)} images")
         
-        prompt = '''CRITICAL QUESTION PAPER EXTRACTION TASK:
+        enhanced_prompt = '''COMPREHENSIVE QUESTION EXTRACTION FROM EXAMINATION PAPER
 
-You are extracting questions from an academic examination paper. Your task is to identify and transcribe ONLY the actual questions that require answers from students.
+You are extracting questions from an academic examination. Extract EVERY question that students need to answer.
 
-STRICT REQUIREMENTS:
+WHAT TO FIND:
+1. Question numbers: "1.", "2.", "Q1", "Q2", "Question 1", "Question 2", etc.
+2. Sub-questions: (a), (b), (c), (i), (ii), (iii), (1), (2), (3)
+3. Mark allocations: [2 marks], [10], (5), etc.
+4. Multiple choice options: A., B., C., D. with full text
+5. All question content including:
+   - Complete question statements
+   - Mathematical expressions and matrices
+   - References to figures/diagrams
+   - Instructions within questions
 
-1. IDENTIFY ACTUAL QUESTIONS - Look for content that:
-   - Has clear question numbers (1, 2, 3... or Q1, Q2, Q3... or Question 1, Question 2...)
-   - Contains question text that asks something requiring an answer
-   - May have mark allocation like [5], [10], (3 marks), etc.
-   - May have sub-parts (a), (b), (c)... or i), ii), iii... or (1), (2), (3)...
-   - May contain multiple choice options A, B, C, D
-   - May reference figures, diagrams, matrices, or mathematical expressions
+FORMAT REQUIREMENTS:
+Question 1: [Complete question text including all details] [marks if shown]
+(a) [Sub-question text if any]
+(b) [Sub-question text if any]
 
-2. EXCLUDE THE FOLLOWING - Do NOT include:
-   - Header information (Department, Institute name, Course codes, Instructor names)
-   - Exam metadata (Date, Time, Duration, Total marks)
-   - General instructions ("The exam is closed book", "Write clearly", "Do not use AI")
-   - Page numbers, watermarks, or footer text
-   - Phrases like "Please go on to the next page", "Question continues on next page"
-   - "End of Exam" or similar closing statements
+Question 2: [Next complete question with all details] [marks if shown]
+A. [Option A text]
+B. [Option B text]
+C. [Option C text]  
+D. [Option D text]
 
-3. FORMATTING REQUIREMENTS:
-   - Start each main question with "Question [number]:"
-   - Preserve all sub-parts with proper indentation
-   - Include mark allocations if present: [X marks] or [X]
-   - For multiple choice questions, include all options A, B, C, D
-   - Preserve mathematical expressions, matrices, and formulas
-   - Note references to figures/diagrams as [FIGURE REFERENCED] or [DIAGRAM REFERENCED]
-   - Maintain question hierarchy and structure
+Question 3: [Continue for all questions...]
 
-If no actual questions are found, state "NO QUESTIONS FOUND ON THIS PAGE"
+IGNORE:
+- Header information (Institution name, course codes)
+- Exam metadata (Date, time, duration, total marks)
+- General instructions not part of specific questions
+- Page numbers and footers
 
-OUTPUT ONLY the extracted question text without any explanations or markdown formatting.'''
+CRITICAL: Extract the COMPLETE question text for each question. Include mathematical expressions, all sub-parts, and detailed descriptions. Do not summarize or shorten questions.
+
+Output only the extracted questions in the specified format.'''
         
-        print(f"Sending to {model.upper()} for question extraction...")
+        print(f"Sending to {model.upper()} for enhanced question extraction...")
         if model == "gemini":
-            result = gemini_extract_question_text(image_paths, prompt)
+            result = gemini_extract_question_text(image_paths, enhanced_prompt)
         else:
-            result = gpt4o_extract_answer_latex(image_paths, question_text="", prompt=prompt)
+            result = gpt4o_extract_answer_latex(image_paths, question_text="", prompt=enhanced_prompt)
         
-        print("Question extraction complete")
-        return result
+        # Post-process and validate result
+        if not result or len(result.strip()) < 50:
+            print("First attempt produced insufficient content, trying alternative approach...")
+            
+            # Try with more specific prompt
+            fallback_prompt = '''Extract exam questions step by step:
+
+1. Look for numbered items: 1., 2., 3., Q1, Q2, Question 1, etc.
+2. Extract the complete text for each numbered question
+3. Include any sub-parts like (a), (b), (c)
+4. Include mark allocations like [2], [10 marks], (5 marks)
+5. For multiple choice, include all A, B, C, D options
+
+Format as:
+Question 1: [Full question]
+Question 2: [Full question] 
+etc.
+
+Extract ALL questions completely and accurately.'''
+            
+            if model == "gemini":
+                result = gemini_extract_question_text(image_paths, fallback_prompt)
+            else:
+                result = gpt4o_extract_answer_latex(image_paths, question_text="", prompt=fallback_prompt)
+        
+        print("Enhanced question extraction complete")
+        return result if result and len(result.strip()) > 50 else "Error: Could not extract questions from the provided PDF"
         
     except Exception as e:
-        print(f"Error in _original_extract_question_text: {e}")
+        print(f"Error in _enhanced_extract_question_text: {e}")
         print(traceback.format_exc())
         return f"Error extracting questions: {str(e)}"
 
 def process_student_pdf(filename: str, question_text: str, output_folder: str, fallback_model: str = "gemini"):
-    """Process student PDF using agentic system with automatic model selection"""
+    """Process student PDF with agentic system - using proper model selection"""
     try:
         student_name = os.path.splitext(filename)[0]
         local_path = os.path.join("uploads/students_data", filename)
@@ -172,23 +231,47 @@ def process_student_pdf(filename: str, question_text: str, output_folder: str, f
         if AGENTIC_AVAILABLE:
             print(f"Processing {student_name} with agentic system...")
             
-            # For full agentic processing, we'd need both question and answer PDFs
-            # For now, use enhanced processing with original method
-            print("Using enhanced processing method")
-            return _original_process_student_pdf(filename, question_text, output_folder, fallback_model)
+            # Use agentic processing with proper model selection
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Create analyzer and answer processor agents
+                analyzer = DocumentAnalyzerAgent()
+                
+                # Analyze student document
+                analysis_task = {
+                    "file_path": local_path,
+                    "file_type": "answer_sheet"
+                }
+                analysis_result = loop.run_until_complete(analyzer.execute(analysis_task))
+                
+                if analysis_result.success:
+                    strategy = analysis_result.data["strategy"]
+                    recommended_model = strategy["recommended_model"]
+                    print(f"Agentic system recommends for answer processing: {recommended_model}")
+                    
+                    # Use the recommended model for processing
+                    return _enhanced_process_student_pdf(filename, question_text, output_folder, recommended_model)
+                else:
+                    print("Analysis failed, using fallback model")
+                    return _enhanced_process_student_pdf(filename, question_text, output_folder, fallback_model)
+                    
+            finally:
+                loop.close()
         else:
-            print("Using original processing method")
-            return _original_process_student_pdf(filename, question_text, output_folder, fallback_model)
+            print("Using enhanced processing method")
+            return _enhanced_process_student_pdf(filename, question_text, output_folder, fallback_model)
             
     except Exception as e:
         print(f"Error in agentic student processing: {e}")
-        return _original_process_student_pdf(filename, question_text, output_folder, fallback_model)
+        return _enhanced_process_student_pdf(filename, question_text, output_folder, fallback_model)
 
-def _original_process_student_pdf(filename: str, question_text: str, output_folder: str, model: str = "gemini"):
-    """Original processing method as fallback"""
+def _enhanced_process_student_pdf(filename: str, question_text: str, output_folder: str, model: str = "gemini"):
+    """Enhanced processing with better question-answer mapping"""
     try:
         student_name = os.path.splitext(filename)[0]
-        print(f"Processing: {student_name} with {model.upper()}")
+        print(f"Enhanced processing: {student_name} with {model.upper()}")
 
         local_path = os.path.join("uploads/students_data", filename)
         if not os.path.exists(local_path):
@@ -199,19 +282,70 @@ def _original_process_student_pdf(filename: str, question_text: str, output_fold
         image_pages = pdf_to_images(local_path)
         print(f"Generated {len(image_pages)} pages")
 
-        print(f"Extracting answers with {model.upper()}...")
-        if model == "gemini":
-            latex_output = gemini_extract_answer_latex(image_pages, question_text)
-        else:
-            latex_output = gpt4o_extract_answer_latex(image_pages, question_text)
+        # Enhanced prompt with better question-answer mapping
+        enhanced_prompt = f'''Create a comprehensive LaTeX document that maps student answers to exam questions.
 
-        print("Raw AI output preview:", latex_output[:200] if latex_output else "No output")
+REQUIRED OUTPUT: Complete LaTeX document starting with \\documentclass and ending with \\end{{document}}
+
+STRUCTURE REQUIRED:
+\\documentclass[12pt]{{article}}
+\\usepackage{{amsmath, amssymb, geometry, enumitem}}
+\\usepackage[utf8]{{inputenc}}
+\\geometry{{margin=1in}}
+
+\\begin{{document}}
+\\title{{Student Answer Sheet Analysis}}
+\\author{{Automated Processing System}}
+\\date{{\\today}}
+\\maketitle
+
+\\section*{{Questions and Student Responses}}
+
+For each question below, show:
+1. The complete question text
+2. The student's complete answer
+
+\\subsection*{{Question 1}}
+\\textbf{{Question:}} [Question text from question paper]
+
+\\textbf{{Student Answer:}}
+\\begin{{quote}}
+[Student's complete response]
+\\end{{quote}}
+
+\\subsection*{{Question 2}}
+[Continue for all questions...]
+
+\\end{{document}}
+
+EXTRACTION REQUIREMENTS:
+- Extract ALL student handwriting and marks
+- Include mathematical calculations and diagrams
+- Map answers to questions using question numbers when possible
+- If mapping unclear, extract all content sequentially
+- Describe diagrams as "Student drew: [description]"
+- Do NOT correct answers - extract exactly as written
+- ENSURE the output is COMPLETE and well-formed
+
+QUESTION PAPER CONTENT:
+{question_text}
+
+STUDENT ANSWER SHEET:
+Now examine the answer sheet images and create the complete LaTeX document.'''
+
+        print(f"Extracting answers with enhanced mapping using {model.upper()}...")
+        if model == "gemini":
+            latex_output = gemini_extract_answer_latex(image_pages, question_text, enhanced_prompt)
+        else:
+            latex_output = gpt4o_extract_answer_latex(image_pages, question_text, enhanced_prompt)
+
+        print("Raw AI output preview:", latex_output[:300] if latex_output else "No output")
         
-        # Clean and validate the LaTeX output
-        latex_output = clean_latex_output(latex_output)
+        # Enhanced cleaning and validation
+        latex_output = enhanced_clean_latex_output(latex_output, question_text, student_name)
         
         tex_path = os.path.join(output_folder, f"{student_name}_answers.tex")
-        print(f"Writing LaTeX to: {tex_path}")
+        print(f"Writing enhanced LaTeX to: {tex_path}")
         with open(tex_path, "w", encoding="utf-8") as f:
             f.write(latex_output)
 
@@ -235,15 +369,19 @@ def _original_process_student_pdf(filename: str, question_text: str, output_fold
             print(f"LaTeX compile error: {result.stderr}")
             print(f"LaTeX stdout: {result.stdout}")
             
-            # Create a simple fallback PDF with error info
-            error_latex = create_fallback_latex(f"LaTeX compilation failed.\n\nError: {result.stderr}\n\nGenerated LaTeX:\n{latex_output[:1000]}")
+            # Create enhanced fallback PDF
+            error_latex = create_enhanced_fallback_latex(
+                f"LaTeX compilation failed.\n\nError: {result.stderr}\n\nGenerated LaTeX:\n{latex_output[:1000]}",
+                question_text,
+                student_name
+            )
             with open(tex_path, "w", encoding="utf-8") as f:
                 f.write(error_latex)
             
             # Try compiling the fallback
             fallback_result = subprocess.run(compile_command, capture_output=True, text=True)
             if fallback_result.returncode != 0 or not os.path.exists(pdf_path):
-                print("Even fallback compilation failed")
+                print("Even enhanced fallback compilation failed")
                 return None
             
         print(f"PDF generated for {student_name}")
@@ -263,12 +401,144 @@ def _original_process_student_pdf(filename: str, question_text: str, output_fold
         return f"{student_name}_answers.pdf"
         
     except Exception as e:
-        print(f"Error in _original_process_student_pdf: {e}")
+        print(f"Error in _enhanced_process_student_pdf: {e}")
         print(traceback.format_exc())
         return None
 
+def enhanced_clean_latex_output(latex_text: str, question_text: str, student_name: str) -> str:
+    """Enhanced LaTeX cleaning and validation with question integration"""
+    if not latex_text or not latex_text.strip():
+        return create_enhanced_fallback_latex("No content generated by AI model", question_text, student_name)
+    
+    # Remove markdown code blocks
+    if "```latex" in latex_text:
+        latex_text = latex_text.split("```latex")[1].split("```")[0]
+    elif "```" in latex_text:
+        parts = latex_text.split("```")
+        if len(parts) >= 3:
+            latex_text = parts[1]
+    
+    latex_text = latex_text.strip()
+    
+    # Check if it starts with proper LaTeX
+    if not latex_text.startswith("\\documentclass"):
+        # Try to find documentclass in the text
+        match = re.search(r'\\documentclass.*?\\begin\{document\}.*?\\end\{document\}', latex_text, re.DOTALL)
+        if match:
+            latex_text = match.group(0)
+        else:
+            print("WARNING: Invalid LaTeX output detected, creating enhanced fallback document")
+            return create_enhanced_fallback_latex(latex_text[:1000] + "..." if len(latex_text) > 1000 else latex_text, question_text, student_name)
+    
+    # Validate basic LaTeX structure
+    required_elements = ["\\begin{document}", "\\end{document}"]
+    for element in required_elements:
+        if element not in latex_text:
+            print(f"WARNING: Missing {element}, creating enhanced fallback")
+            return create_enhanced_fallback_latex(latex_text[:1000] + "..." if len(latex_text) > 1000 else latex_text, question_text, student_name)
+    
+    # Check if questions are properly included
+    if "Question" not in latex_text and "question" not in latex_text:
+        print("WARNING: No questions found in output, enhancing with question content")
+        return enhance_latex_with_questions(latex_text, question_text, student_name)
+    
+    return latex_text
+
+def enhance_latex_with_questions(latex_content: str, question_text: str, student_name: str) -> str:
+    """Enhance LaTeX output by properly integrating questions"""
+    try:
+        # Extract the body content between \begin{document} and \end{document}
+        body_match = re.search(r'\\begin\{document\}(.*?)\\end\{document\}', latex_content, re.DOTALL)
+        if body_match:
+            body_content = body_match.group(1)
+        else:
+            body_content = latex_content
+        
+        # Create enhanced document with questions and answers
+        enhanced_doc = f"""\\documentclass[12pt]{{article}}
+\\usepackage{{amsmath, amssymb, geometry, enumitem}}
+\\usepackage[utf8]{{inputenc}}
+\\geometry{{margin=1in}}
+\\setlength{{\\parskip}}{{6pt}}
+
+\\begin{{document}}
+
+\\title{{Student Answer Sheet Analysis}}
+\\author{{Automated Processing System}}
+\\date{{\\today}}
+\\maketitle
+
+\\section*{{Exam Questions and Student Responses}}
+
+\\subsection*{{Question Paper Content}}
+\\begin{{quote}}
+{question_text}
+\\end{{quote}}
+
+\\subsection*{{Student Response Content}}
+\\begin{{quote}}
+{body_content.strip()}
+\\end{{quote}}
+
+\\section*{{Processing Notes}}
+The student's responses have been extracted from the answer sheet. The AI system attempted to map answers to specific questions, but manual review may be needed for complete accuracy.
+
+\\end{{document}}"""
+        
+        return enhanced_doc
+        
+    except Exception as e:
+        print(f"Error enhancing LaTeX: {e}")
+        return create_enhanced_fallback_latex("Error enhancing document", question_text, student_name)
+
+def create_enhanced_fallback_latex(content: str, question_text: str, student_name: str) -> str:
+    """Create an enhanced fallback LaTeX document with both questions and extracted content"""
+    return f"""\\documentclass[12pt]{{article}}
+\\usepackage{{amsmath, amssymb, geometry, enumitem}}
+\\usepackage[utf8]{{inputenc}}
+\\geometry{{margin=1in}}
+\\setlength{{\\parskip}}{{6pt}}
+
+\\begin{{document}}
+
+\\title{{Student Answer Sheet Analysis - {student_name}}}
+\\author{{Automated Processing System}}
+\\date{{\\today}}
+\\maketitle
+
+\\section*{{Processing Status}}
+The AI model encountered difficulties generating a complete analysis. Below is the available content extracted from the documents.
+
+\\section*{{Question Paper Content}}
+\\begin{{quote}}
+{question_text if question_text else "Question content not available"}
+\\end{{quote}}
+
+\\section*{{Extracted Student Work}}
+\\begin{{quote}}
+{content}
+\\end{{quote}}
+
+\\section*{{Recommendations}}
+\\begin{{itemize}}
+\\item Check image quality of the answer sheet
+\\item Ensure handwriting is clear and legible  
+\\item Try processing again with different AI model
+\\item Consider manual review of the original documents
+\\end{{itemize}}
+
+\\section*{{Technical Details}}
+\\begin{{itemize}}
+\\item Student: {student_name}
+\\item Processing Date: \\today
+\\item AI Model: Agentic system with automatic selection
+\\item Status: Partial extraction completed
+\\end{{itemize}}
+
+\\end{{document}}"""
+
 def clean_latex_output(latex_text):
-    """Clean and validate LaTeX output"""
+    """Clean and validate LaTeX output - legacy function maintained for compatibility"""
     if not latex_text or not latex_text.strip():
         return create_fallback_latex("No content generated by AI model")
     
@@ -289,7 +559,6 @@ def clean_latex_output(latex_text):
         if match:
             latex_text = match.group(0)
         else:
-            # If no valid LaTeX structure found, create fallback
             print("WARNING: Invalid LaTeX output detected, creating fallback document")
             return create_fallback_latex(latex_text[:500] + "..." if len(latex_text) > 500 else latex_text)
     
@@ -301,7 +570,7 @@ def clean_latex_output(latex_text):
     return latex_text
 
 def create_fallback_latex(content="Error processing content"):
-    """Create a fallback LaTeX document"""
+    """Create a fallback LaTeX document - legacy function maintained for compatibility"""
     return f"""\\documentclass{{article}}
 \\usepackage{{amsmath}}
 \\usepackage{{geometry}}

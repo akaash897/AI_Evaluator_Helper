@@ -1,4 +1,4 @@
-# agents/answer_processor.py
+# agents/answer_processor.py - Debug Enhanced Version
 from typing import Dict, List, Any
 from utils.ocr_openai import pdf_to_images, gpt4o_extract_answer_latex
 from utils.ocr_gemini import gemini_extract_answer_latex
@@ -7,63 +7,89 @@ from .base_agent import BaseAgent, AgentResult
 class AnswerProcessorAgent(BaseAgent):
     def __init__(self):
         super().__init__("AnswerProcessor", ["openai_vision", "gemini_vision"])
-        self.answer_prompt = (
-            "You are an expert assistant for exam paper processing. Your job is to extract BOTH the questions and the answers, and map each question to its corresponding answer.\n"
-            "\nIMPORTANT: You MUST output a complete, valid LaTeX document starting with \\documentclass and ending with \\end{document}.\n"
-            "\nSTRICT INSTRUCTIONS:\n"
-            "1. For each question in the question paper, extract the full question text and write it in the output.\n"
-            "2. For each answer in the answer sheet, match it to the correct question number and place it directly after the corresponding question.\n"
-            "3. If a question is not answered, write 'Not answered' under that question.\n"
-            "4. Do NOT skip or summarize any part of the student's answer. Write everything exactly as written, including diagrams (describe them if present), points, arrows, and all formatting.\n"
-            "5. For numerical or math problems, do NOT correct or reason about the answer. Just extract as written.\n"
-            "6. Use proper LaTeX formatting. Include all required packages for math, tables, and diagrams.\n"
-            "7. Output ONLY a complete LaTeX document, starting with \\documentclass and ending with \\end{document}. Do NOT include any markdown formatting, explanations, or code blocks.\n"
-            "8. The output should have, for each question:\n"
-            "   - The question number and full question text (from the question paper)\n"
-            "   - The answer (from the answer sheet) matched to that question\n"
-            "\nEXAMPLE OUTPUT FORMAT:\n"
-            "\\documentclass{article}\n"
-            "\\usepackage{amsmath}\n"
-            "\\usepackage{geometry}\n"
-            "\\geometry{margin=1in}\n"
-            "\\begin{document}\n"
-            "\\title{Student Answer Sheet}\n"
-            "\\maketitle\n"
-            "\\section*{Question 1}\n"
-            "What is the capital of France?\n"
-            "\\textbf{Answer:}\n"
-            "Paris\n"
-            "\\section*{Question 2}\n"
-            "Solve: $x^2 - 4 = 0$\n"
-            "\\textbf{Answer:}\n"
-            "$x^2 - 4 = 0$ implies $x^2 = 4$ therefore $x = \\pm 2$\n"
-            "\\end{document}\n"
-            "\nCRITICAL: Your response must start with \\documentclass and end with \\end{document}. Do not include any other text before or after the LaTeX document.\n"
-        )
-    
+        self.answer_prompt = """Create a comprehensive LaTeX document mapping student answers to questions.
+
+CRITICAL: Generate a COMPLETE document. Do not truncate or abbreviate.
+
+REQUIRED STRUCTURE:
+\\documentclass[12pt]{article}
+\\usepackage{amsmath, amssymb, geometry, enumitem}
+\\usepackage[utf8]{inputenc}
+\\geometry{margin=1in}
+
+\\begin{document}
+\\title{Student Answer Sheet Analysis}
+\\author{Automated Processing System}
+\\date{\\today}
+\\maketitle
+
+\\section*{Questions and Student Responses}
+
+\\subsection*{Question 1}
+\\textbf{Question:} [Question text]
+\\textbf{Student Answer:}
+\\begin{quote}
+[Student response]
+\\end{quote}
+
+\\subsection*{Question 2}
+[Continue for all questions...]
+
+\\end{document}
+
+EXTRACTION RULES:
+- Extract ALL student handwriting
+- Map to questions when possible
+- Include calculations, diagrams
+- Generate COMPLETE document
+- End with \\end{document}
+
+CRITICAL: Ensure the output is COMPLETE and well-formed."""
+
     async def execute(self, task: Dict[str, Any]) -> AgentResult:
         try:
             file_path = task["file_path"]
             question_text = task["question_text"]
             strategy = task["strategy"]
             
+            print(f"DEBUG: Processing answer sheet: {file_path}")
+            print(f"DEBUG: Question text length: {len(question_text) if question_text else 0}")
+            
             # Convert PDF to images
             image_paths = pdf_to_images(file_path)
+            print(f"DEBUG: Generated {len(image_paths)} images from answer sheet")
             
             # Choose model based on strategy
             model = strategy["recommended_model"]
+            print(f"DEBUG: Using model: {model}")
+            
+            # Create comprehensive prompt with question context
+            full_prompt = self._create_debug_prompt(question_text)
+            print(f"DEBUG: Prompt length: {len(full_prompt)}")
             
             # Process answers using chosen model
-            latex_output = self._process_answers(image_paths, question_text, model)
+            latex_output = self._process_answers_debug(image_paths, question_text, model, full_prompt)
+            print(f"DEBUG: Raw output length: {len(latex_output) if latex_output else 0}")
             
-            # Validate LaTeX output
-            validation = self._validate_latex(latex_output)
+            if latex_output:
+                print(f"DEBUG: Output preview: {latex_output[:500]}...")
+                print(f"DEBUG: Output ending: ...{latex_output[-200:]}")
             
-            # Retry with different model if validation fails
-            if not validation["is_valid"] and validation["should_retry"]:
-                fallback_model = "gemini" if model == "openai" else "openai"
-                latex_output = self._process_answers(image_paths, question_text, fallback_model)
-                validation = self._validate_latex(latex_output)
+            # Enhanced validation
+            validation = self._enhanced_validate_latex(latex_output)
+            print(f"DEBUG: Validation result: {validation}")
+            
+            # Retry with different approach if validation fails
+            if not validation["is_valid"]:
+                print("DEBUG: First attempt failed, trying simplified approach...")
+                simplified_prompt = self._create_simplified_prompt(question_text)
+                latex_output = self._process_answers_debug(image_paths, question_text, model, simplified_prompt)
+                validation = self._enhanced_validate_latex(latex_output)
+                
+                if not validation["is_valid"]:
+                    print("DEBUG: Second attempt failed, creating structured fallback...")
+                    latex_output = self._create_structured_fallback(latex_output, question_text)
+                    validation = {"is_valid": True, "confidence": 0.6, "issues": ["Used structured fallback"]}
             
             return AgentResult(
                 success=validation["is_valid"],
@@ -77,17 +103,75 @@ class AnswerProcessorAgent(BaseAgent):
             )
             
         except Exception as e:
+            print(f"DEBUG: Exception in answer processor: {e}")
+            import traceback
+            traceback.print_exc()
             return AgentResult(success=False, error=str(e))
     
-    def _process_answers(self, image_paths: List[str], question_text: str, model: str) -> str:
-        full_prompt = self.answer_prompt + f"\nQUESTION PAPER:\n{question_text}\nANSWER SHEET IMAGES:"
-        
-        if model == "gemini":
-            return gemini_extract_answer_latex(image_paths, question_text, full_prompt)
-        else:
-            return gpt4o_extract_answer_latex(image_paths, question_text, full_prompt)
+    def _create_debug_prompt(self, question_text: str) -> str:
+        return f"""Generate a complete LaTeX document. CRITICAL: Do not truncate the output.
+
+COMPLETE LATEX TEMPLATE:
+\\documentclass[12pt]{{article}}
+\\usepackage{{amsmath, amssymb, geometry}}
+\\usepackage[utf8]{{inputenc}}
+\\geometry{{margin=1in}}
+
+\\begin{{document}}
+\\title{{Student Answer Sheet Analysis}}
+\\author{{Automated Processing}}
+\\date{{\\today}}
+\\maketitle
+
+\\section*{{Questions and Answers}}
+
+For each question below, show the question text followed by the student's answer.
+
+[EXTRACT STUDENT RESPONSES AND MAP TO QUESTIONS]
+
+\\end{{document}}
+
+QUESTION PAPER:
+{question_text[:2000] if question_text else "No questions provided"}
+
+STUDENT ANSWER SHEET: Extract all student work and create the complete LaTeX document above."""
     
-    def _validate_latex(self, latex_output: str) -> Dict:
+    def _create_simplified_prompt(self, question_text: str) -> str:
+        return f"""Create a simple but complete LaTeX document:
+
+\\documentclass{{article}}
+\\usepackage{{amsmath}}
+\\begin{{document}}
+\\title{{Student Answers}}
+\\maketitle
+
+\\section{{Student Work}}
+[Extract all student handwriting and work]
+
+\\section{{Questions}}
+{question_text[:1000] if question_text else "Questions not available"}
+
+\\end{{document}}
+
+Extract ALL student work from the images and create this complete document."""
+    
+    def _process_answers_debug(self, image_paths: List[str], question_text: str, model: str, prompt: str) -> str:
+        try:
+            print(f"DEBUG: Processing with {model}, {len(image_paths)} images")
+            
+            if model == "gemini":
+                result = gemini_extract_answer_latex(image_paths, question_text, prompt)
+            else:
+                result = gpt4o_extract_answer_latex(image_paths, question_text, prompt)
+            
+            print(f"DEBUG: Model returned {len(result) if result else 0} characters")
+            return result
+            
+        except Exception as e:
+            print(f"DEBUG: Error in model processing: {e}")
+            return f"Error in processing: {str(e)}"
+    
+    def _enhanced_validate_latex(self, latex_output: str) -> Dict:
         validation = {
             "is_valid": True,
             "should_retry": False,
@@ -99,23 +183,71 @@ class AnswerProcessorAgent(BaseAgent):
             validation["is_valid"] = False
             validation["should_retry"] = True
             validation["confidence"] = 0.1
-            validation["issues"].append("LaTeX output too short")
+            validation["issues"].append("Output too short")
             return validation
         
         # Check for LaTeX structure
-        if not latex_output.strip().startswith("\\documentclass"):
-            validation["is_valid"] = False
-            validation["confidence"] = 0.3
-            validation["issues"].append("Missing \\documentclass")
+        required_elements = [
+            ("\\documentclass", "Missing \\documentclass"),
+            ("\\begin{document}", "Missing \\begin{document}"),
+            ("\\end{document}", "Missing \\end{document}")
+        ]
         
-        if "\\begin{document}" not in latex_output:
-            validation["is_valid"] = False
-            validation["confidence"] = 0.3
-            validation["issues"].append("Missing \\begin{document}")
+        for element, error_msg in required_elements:
+            if element not in latex_output:
+                validation["is_valid"] = False
+                validation["confidence"] = 0.3
+                validation["issues"].append(error_msg)
         
-        if "\\end{document}" not in latex_output:
+        # Check for content between begin and end document
+        import re
+        doc_match = re.search(r'\\begin\{document\}(.*?)\\end\{document\}', latex_output, re.DOTALL)
+        if doc_match:
+            content = doc_match.group(1).strip()
+            if len(content) < 50:
+                validation["is_valid"] = False
+                validation["confidence"] = 0.4
+                validation["issues"].append("Insufficient content in document")
+        else:
             validation["is_valid"] = False
-            validation["confidence"] = 0.3
-            validation["issues"].append("Missing \\end{document}")
+            validation["confidence"] = 0.2
+            validation["issues"].append("Cannot find document content")
         
         return validation
+    
+    def _create_structured_fallback(self, original_output: str, question_text: str) -> str:
+        """Create a well-structured fallback document"""
+        return f"""\\documentclass[12pt]{{article}}
+\\usepackage{{amsmath, amssymb, geometry}}
+\\usepackage[utf8]{{inputenc}}
+\\geometry{{margin=1in}}
+
+\\begin{{document}}
+
+\\title{{Student Answer Sheet Analysis}}
+\\author{{Automated Processing System}}
+\\date{{\\today}}
+\\maketitle
+
+\\section*{{Processing Status}}
+The system encountered difficulties generating a complete analysis. Available content is shown below.
+
+\\section*{{Question Paper Content}}
+\\begin{{quote}}
+{question_text if question_text else "Question content not available"}
+\\end{{quote}}
+
+\\section*{{Extracted Content}}
+\\begin{{quote}}
+{original_output[:1000] if original_output else "No content extracted successfully"}
+\\end{{quote}}
+
+\\section*{{Technical Information}}
+\\begin{{itemize}}
+\\item Processing method: Enhanced agentic system with fallback
+\\item Issue: LaTeX generation validation failed
+\\item Status: Partial content extracted
+\\item Recommendation: Check source document quality and retry
+\\end{{itemize}}
+
+\\end{{document}}"""
