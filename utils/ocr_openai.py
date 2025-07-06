@@ -118,7 +118,7 @@ Generate ONLY the complete LaTeX document. Start with \\documentclass and end wi
             model="gpt-4o",
             messages=messages,
             temperature=0.1,
-            max_tokens=4000  # Increased for longer documents
+            max_tokens=10000  # Increased for longer documents
         )
         
         latex_output = response.choices[0].message.content

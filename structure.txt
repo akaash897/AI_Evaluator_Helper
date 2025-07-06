@@ -1,0 +1,30 @@
+AGENTIC_TEXT_EXTRACTOR/
+├── __pycache__/
+├── agentic/
+├── agents/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   ├── answer_processor.py
+│   ├── base_agent.py
+│   ├── document_analyzer.py
+│   ├── latex_compiler.py
+│   ├── orchestrator.py
+│   └── question_extractor.py
+├── outputs/
+├── templates/
+│   ├── index.html
+│   └── results.html
+├── tmp/
+├── uploads/
+├── utils/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   ├── ocr_gemini.py
+│   └── ocr_openai.py
+├── .env
+├── .gitignore
+├── app.py
+├── folders_metadata.json
+├── main.py
+├── requirements.txt
+└── setup_agentic_system.py
