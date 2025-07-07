@@ -238,7 +238,7 @@ Extract ALL questions in the specified format. Be thorough and comprehensive."""
                 model="gpt-4o",
                 messages=messages,
                 temperature=0.1,
-                max_tokens=3000
+                max_tokens=10000
             )
             
             result = response.choices[0].message.content.strip()
