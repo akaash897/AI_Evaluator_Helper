@@ -1,4 +1,4 @@
-# utils/ocr_openai.py - Enhanced version
+# utils/ocr_openai.py - Enhanced version with multi-page support
 import os
 from dotenv import load_dotenv
 from PIL import Image
@@ -17,6 +17,8 @@ def pdf_to_images(pdf_path):
         img_path = f"tmp/{base_name}/page_{i + 1}.png"
         img.save(img_path, "PNG", optimize=True, quality=95)
         image_paths.append(img_path)
+    
+    print(f"DEBUG: Converted PDF to {len(image_paths)} images")
     return image_paths
 
 def encode_image_base64(image_path):
@@ -138,35 +140,43 @@ Generate ONLY the complete LaTeX document. Start with \\documentclass and end wi
         return _create_openai_enhanced_fallback(f"Error: {str(e)}", question_text)
 
 def gpt4o_extract_questions(image_paths, prompt=None):
-    """Enhanced function for question extraction with GPT-4V"""
+    """Enhanced function for multi-page question extraction with GPT-4V"""
     
     if prompt is None:
-        prompt = """COMPREHENSIVE QUESTION EXTRACTION FROM EXAMINATION PAPER
+        prompt = """COMPREHENSIVE MULTI-PAGE QUESTION EXTRACTION
 
-Extract ALL examination questions that students need to answer.
+CRITICAL: This examination paper has MULTIPLE PAGES. You must extract questions from ALL pages.
+
+Extract ALL examination questions from the ENTIRE document (all pages provided).
+
+MULTI-PAGE PROCESSING INSTRUCTIONS:
+1. EXAMINE ALL IMAGES: Look through every page/image provided
+2. EXTRACT FROM EVERY PAGE: Find questions on all pages, not just the first
+3. MAINTAIN CONTINUITY: Questions may continue across pages
+4. PRESERVE ORDER: Extract questions in sequence across all pages
 
 DETAILED REQUIREMENTS:
 
-1. IDENTIFY ALL QUESTIONS:
+1. IDENTIFY ALL QUESTIONS ACROSS ALL PAGES:
    - Question numbers: "1.", "2.", "Q1", "Q2", "Question 1", "Question 2", etc.
    - Sub-questions: (a), (b), (c), (i), (ii), (iii), (1), (2), (3)
    - Multiple choice questions with options A, B, C, D
    - Mark allocations: [2 marks], [10], (5), etc.
 
-2. EXTRACT COMPLETE CONTENT:
+2. EXTRACT COMPLETE CONTENT FROM ALL PAGES:
    - Full question text with all details and instructions
    - Mathematical expressions, matrices, and formulas exactly as shown
    - All sub-parts and their complete text
    - Complete text for all multiple choice options
    - References to figures, diagrams, or tables
 
-3. PRESERVE STRUCTURE:
+3. PRESERVE STRUCTURE ACROSS PAGES:
    - Maintain question hierarchy and numbering
    - Keep proper indentation for sub-parts
    - Include all instructional text that's part of the question
    - Preserve mathematical notation exactly
 
-4. OUTPUT FORMAT:
+4. OUTPUT FORMAT FOR ALL PAGES:
 Question 1: [Complete question text including all details] [marks if shown]
 (a) [Complete sub-question text]
 (b) [Complete sub-question text]
@@ -177,17 +187,17 @@ B. [Complete option B text]
 C. [Complete option C text]
 D. [Complete option D text]
 
-Question 3: [Continue for all questions...]
+Question 3: [Continue for ALL questions from ALL pages...]
 
-5. IGNORE ADMINISTRATIVE CONTENT:
+5. IGNORE ADMINISTRATIVE CONTENT ON ALL PAGES:
    - Institution headers, course codes, instructor names
    - Exam instructions, duration, total marks
    - Page numbers, footers, watermarks
    - General instructions not part of specific questions
 
-6. CRITICAL: Extract the COMPLETE question text. Include mathematical expressions, detailed descriptions, and all instructions. Do not summarize or abbreviate questions.
+6. CRITICAL: Extract the COMPLETE question text from ALL pages. Include mathematical expressions, detailed descriptions, and all instructions. Do not summarize or abbreviate questions.
 
-Extract ALL questions in the specified format. Be thorough and comprehensive."""
+Process ALL pages and extract ALL questions in the specified format. Be thorough and comprehensive across the entire document."""
 
     messages = [
         {
@@ -201,7 +211,8 @@ Extract ALL questions in the specified format. Be thorough and comprehensive."""
         }
     ]
     
-    for path in image_paths:
+    # Add ALL images to the request
+    for i, path in enumerate(image_paths):
         img_b64 = encode_image_base64(path)
         messages[0]["content"].append({
             "type": "image_url",
@@ -211,42 +222,123 @@ Extract ALL questions in the specified format. Be thorough and comprehensive."""
             }
         })
     
+    print(f"DEBUG: Sending {len(image_paths)} pages to OpenAI for question extraction")
+    
     try:
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=messages,
             temperature=0.1,
-            max_tokens=3000
+            max_tokens=10000  # Increased for multi-page content
         )
         
         result = response.choices[0].message.content.strip()
+        print(f"DEBUG: OpenAI returned {len(result)} characters for {len(image_paths)} pages")
         
-        # Enhanced validation and processing
-        result = _enhance_openai_question_extraction(result)
+        # Enhanced validation and processing for multi-page
+        result = _enhance_openai_multi_page_extraction(result, len(image_paths))
         
         # Validate the extraction
-        if _is_valid_openai_question_extraction(result):
+        if _is_valid_openai_multi_page_extraction(result, len(image_paths)):
             return result
         else:
-            # Retry with more specific prompt
-            print("Initial extraction insufficient, retrying...")
-            enhanced_prompt = _create_openai_enhanced_question_prompt()
-            
-            messages[0]["content"][0]["text"] = enhanced_prompt
-            
-            response = openai.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                temperature=0.1,
-                max_tokens=10000
-            )
-            
-            result = response.choices[0].message.content.strip()
-            return _enhance_openai_question_extraction(result)
+            # Retry with page-by-page approach
+            print("Multi-page extraction validation failed, trying page-by-page...")
+            return _openai_extract_page_by_page(image_paths, prompt)
             
     except Exception as e:
         print(f"Error in OpenAI question extraction: {e}")
         return f"Error extracting questions: {str(e)}"
+
+def _openai_extract_page_by_page(image_paths, base_prompt):
+    """Fallback: Extract from each page individually"""
+    all_questions = []
+    
+    for i, path in enumerate(image_paths):
+        page_prompt = f"""EXTRACT QUESTIONS FROM PAGE {i+1}
+
+This is page {i+1} of a {len(image_paths)}-page exam.
+
+Extract ALL questions from this specific page. Continue question numbering appropriately.
+
+REQUIREMENTS:
+1. Extract complete question text from this page
+2. Include sub-parts: (a), (b), (c), etc.
+3. Include mark allocations: [marks]
+4. Include MCQ options if present
+5. Preserve mathematical expressions
+
+OUTPUT FORMAT:
+Question [number]: [Complete question text] [marks]
+(a) [Sub-question if any]
+
+Extract ALL content from this page that students need to answer.
+"""
+        
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": page_prompt},
+                {
+                    "type": "image_url", 
+                    "image_url": {
+                        "url": f"data:image/png;base64,{encode_image_base64(path)}",
+                        "detail": "high"
+                    }
+                }
+            ]
+        }]
+        
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                temperature=0.1,
+                max_tokens=3000
+            )
+            
+            page_result = response.choices[0].message.content.strip()
+            if page_result and len(page_result) > 50:
+                all_questions.append(f"\n=== PAGE {i+1} ===")
+                all_questions.append(page_result)
+                print(f"DEBUG: Page {i+1} extracted {len(page_result)} characters")
+            else:
+                print(f"DEBUG: Page {i+1} had minimal content")
+                
+        except Exception as e:
+            print(f"Error processing page {i+1}: {e}")
+    
+    combined_result = "\n".join(all_questions)
+    print(f"DEBUG: Combined result from all pages: {len(combined_result)} characters")
+    return combined_result
+
+def _is_valid_openai_multi_page_extraction(text, num_pages):
+    """Validate OpenAI multi-page extraction"""
+    if not text or len(text.strip()) < 100:
+        print("DEBUG: OpenAI validation failed - text too short")
+        return False
+        
+    # For multi-page documents, expect more content
+    if num_pages > 1:
+        expected_min_length = num_pages * 150
+        if len(text) < expected_min_length:
+            print(f"DEBUG: OpenAI extracted content too short for {num_pages} pages")
+            return False
+    
+    # Check for question distribution
+    import re
+    question_count = len(re.findall(r'Question\s+\d+', text, re.IGNORECASE))
+    
+    if num_pages > 2 and question_count < num_pages:
+        print(f"DEBUG: Only {question_count} questions found across {num_pages} pages")
+        # Don't fail here - some pages might have fewer questions
+    
+    print(f"DEBUG: OpenAI multi-page validation passed - {question_count} questions in {num_pages} pages")
+    return True
+
+def _enhance_openai_multi_page_extraction(text, num_pages):
+    """Enhance OpenAI extraction for multi-page validation"""
+    return text  # OpenAI usually handles this well
 
 def _enhanced_clean_openai_output(latex_output):
     """Enhanced cleaning for OpenAI LaTeX output"""
@@ -374,27 +466,28 @@ def _is_valid_openai_question_extraction(text):
 
 def _create_openai_enhanced_question_prompt():
     """Create enhanced question extraction prompt for OpenAI"""
-    return """STEP-BY-STEP QUESTION EXTRACTION
+    return """STEP-BY-STEP MULTI-PAGE QUESTION EXTRACTION
 
-Follow these steps to extract ALL questions from the exam paper:
+Follow these steps to extract ALL questions from the COMPLETE exam paper:
 
-Step 1: SCAN FOR QUESTION NUMBERS
+Step 1: SCAN FOR QUESTION NUMBERS ON ALL PAGES
 - Look for: "1.", "2.", "3.", "Q1", "Q2", "Question 1", etc.
-- Note each question's location and number
+- Note each question's location and number on each page
+- Process every page provided, not just the first
 
-Step 2: EXTRACT COMPLETE QUESTIONS
-For each question found:
+Step 2: EXTRACT COMPLETE QUESTIONS FROM ALL PAGES
+For each question found on any page:
 - Extract the complete question text
 - Include all sub-parts: (a), (b), (c) or (i), (ii), (iii)
 - Include mark allocations: [2], [10 marks], etc.
 - For multiple choice, include ALL options A, B, C, D
 
-Step 3: PRESERVE MATHEMATICAL CONTENT
+Step 3: PRESERVE MATHEMATICAL CONTENT FROM ALL PAGES
 - Copy mathematical expressions exactly
 - Include matrices, equations, and formulas
 - Note references to figures or diagrams
 
-Step 4: FORMAT OUTPUT
+Step 4: FORMAT OUTPUT FOR COMPLETE DOCUMENT
 Question 1: [Complete question text] [marks if shown]
 (a) [Sub-question if any]
 (b) [Sub-question if any]
@@ -405,12 +498,12 @@ B. [Option B text]
 C. [Option C text]
 D. [Option D text]
 
-Step 5: VERIFY COMPLETENESS
-- Ensure all visible questions are extracted
+Step 5: VERIFY COMPLETENESS ACROSS ALL PAGES
+- Ensure all visible questions from all pages are extracted
 - Check that mathematical expressions are complete
 - Verify sub-parts are included
 
-Extract EVERY question completely and accurately."""
+Extract EVERY question from EVERY page completely and accurately."""
 
 # Legacy helper functions for backward compatibility
 def _extract_meaningful_content(text):

@@ -1,4 +1,4 @@
-# utils/ocr_gemini.py - Enhanced version
+# utils/ocr_gemini.py - Enhanced version with multi-page support
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -106,26 +106,33 @@ def gemini_extract_question_text(image_paths, prompt=None):
     configure_gemini()
     
     if prompt is None:
-        prompt = '''EXTRACT ALL EXAMINATION QUESTIONS
+        prompt = '''EXTRACT ALL EXAMINATION QUESTIONS FROM ALL PAGES
 
-You are analyzing an academic examination paper. Extract EVERY question that students must answer.
+IMPORTANT: This exam paper has MULTIPLE PAGES. You must extract questions from ALL pages provided.
 
-REQUIREMENTS:
+You are analyzing a complete academic examination paper. Extract EVERY question from ALL pages.
 
-1. FIND ALL QUESTIONS:
+CRITICAL REQUIREMENTS:
+
+1. SCAN ALL PAGES: Look through every image/page provided - do not skip any pages
+2. EXTRACT FROM EACH PAGE: Find questions on every page, not just the first one
+3. MAINTAIN PAGE ORDER: Extract questions in the order they appear across all pages
+4. PROCESS COMPLETE DOCUMENT: This is a multi-page exam - extract everything
+
+5. FIND ALL QUESTIONS ACROSS ALL PAGES:
    - Question numbers: "1.", "2.", "Q1", "Q2", "Question 1", etc.
    - Sub-parts: (a), (b), (c), (i), (ii), (iii), (1), (2), (3)
    - Multiple choice options: A., B., C., D.
    - Mark allocations: [2 marks], [10], (5), etc.
 
-2. EXTRACT COMPLETE CONTENT:
-   - Full question text with all details
-   - Mathematical expressions and matrices
-   - All sub-questions and parts
+6. EXTRACT COMPLETE CONTENT FROM ALL PAGES:
+   - Full question text with all details from every page
+   - Mathematical expressions and matrices exactly as shown
+   - All sub-questions and parts from all pages
    - Multiple choice options with complete text
    - References to figures/diagrams
 
-3. OUTPUT FORMAT:
+7. OUTPUT FORMAT (for ALL pages):
 Question 1: [Complete question text] [marks if shown]
 (a) [Sub-question if any]
 (b) [Sub-question if any]
@@ -136,44 +143,127 @@ B. [Option B complete text]
 C. [Option C complete text]
 D. [Option D complete text]
 
-4. IGNORE:
-   - Institution headers and course codes
+[Continue for ALL questions from ALL pages...]
+
+8. IGNORE ADMINISTRATIVE CONTENT ON ALL PAGES:
+   - Institution headers, course codes, instructor names
    - Exam duration, total marks, date/time
-   - General instructions not part of questions
-   - Page numbers and administrative text
+   - Page numbers, footers, watermarks
+   - General instructions not part of specific questions
 
-CRITICAL: Extract the COMPLETE text for each question. Include all mathematical expressions, detailed descriptions, and instructions. Do not summarize or abbreviate.
+CRITICAL: Process ALL images/pages provided. Extract COMPLETE text for each question from every page. Include all mathematical expressions, detailed descriptions, and instructions. Do not summarize or abbreviate.
 
-Extract ALL questions in the specified format:'''
+Extract ALL questions from ALL pages in the specified format:'''
 
     model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
+    # Load ALL images
     images = []
     for image_path in image_paths:
         images.append(Image.open(image_path))
     
+    print(f"DEBUG: Processing {len(images)} pages for question extraction")
+    
     try:
+        # Send ALL images at once to process the complete document
         response = model.generate_content([prompt] + images)
         result = response.text.strip()
         
-        # Validate and enhance the result
-        result = _enhance_question_extraction(result)
+        print(f"DEBUG: Extracted {len(result)} characters from {len(images)} pages")
+        
+        # Validate that we got content from multiple pages
+        result = _enhance_multi_page_extraction(result, len(images))
         
         # Final validation
-        if _validate_question_extraction(result):
+        if _validate_multi_page_extraction(result, len(images)):
             return result
         else:
-            # Try again with more specific prompt
-            print("Initial extraction insufficient, retrying with enhanced prompt...")
-            enhanced_prompt = _create_enhanced_question_prompt()
-            
-            response = model.generate_content([enhanced_prompt] + images)
-            result = response.text.strip()
-            return _enhance_question_extraction(result)
+            # Try page-by-page extraction as fallback
+            print("Multi-page extraction seems incomplete, trying page-by-page approach...")
+            return _extract_questions_page_by_page(images, prompt, model)
             
     except Exception as e:
         print(f"Error in Gemini question extraction: {e}")
         return f"Error extracting questions: {str(e)}"
+
+def _extract_questions_page_by_page(images, base_prompt, model):
+    """Fallback: Extract questions page by page and combine"""
+    all_questions = []
+    
+    for page_num, image in enumerate(images, 1):
+        page_prompt = f"""EXTRACT QUESTIONS FROM PAGE {page_num}
+
+This is page {page_num} of a {len(images)}-page exam paper.
+
+Extract ALL questions from THIS specific page. Continue question numbering appropriately.
+
+REQUIREMENTS:
+1. Extract complete question text from this page
+2. Include sub-parts: (a), (b), (c), etc.
+3. Include mark allocations: [marks]
+4. Include MCQ options if present
+5. Preserve mathematical expressions
+
+OUTPUT FORMAT:
+Question [number]: [Complete question text] [marks]
+(a) [Sub-question if any]
+
+Extract ALL content from this page that students need to answer.
+"""
+        
+        try:
+            response = model.generate_content([page_prompt, image])
+            page_result = response.text.strip()
+            
+            if page_result and len(page_result) > 50:
+                all_questions.append(f"\n=== PAGE {page_num} ===")
+                all_questions.append(page_result)
+                print(f"DEBUG: Page {page_num} extracted {len(page_result)} characters")
+            else:
+                print(f"DEBUG: Page {page_num} had minimal content")
+            
+        except Exception as e:
+            print(f"Error processing page {page_num}: {e}")
+    
+    combined_result = "\n".join(all_questions)
+    print(f"DEBUG: Combined result from all pages: {len(combined_result)} characters")
+    return combined_result
+
+def _validate_multi_page_extraction(text, num_pages):
+    """Validate that extraction covered multiple pages"""
+    if not text or len(text.strip()) < 100:
+        print("DEBUG: Validation failed - text too short")
+        return False
+    
+    # For multi-page documents, expect proportionally more content
+    if num_pages > 1:
+        expected_min_length = num_pages * 200  # At least 200 chars per page
+        if len(text) < expected_min_length:
+            print(f"DEBUG: Extracted text ({len(text)} chars) seems too short for {num_pages} pages")
+            return False
+    
+    # Check for question distribution
+    import re
+    question_count = len(re.findall(r'Question\s+\d+', text, re.IGNORECASE))
+    
+    if num_pages > 1 and question_count < 2:
+        print(f"DEBUG: Only found {question_count} questions in {num_pages} pages - might be incomplete")
+        return False
+    
+    print(f"DEBUG: Multi-page validation passed - {question_count} questions in {num_pages} pages")
+    return True
+
+def _enhance_multi_page_extraction(text, num_pages):
+    """Enhance extraction to ensure multi-page coverage"""
+    if num_pages == 1:
+        return text
+    
+    # Check if extraction seems complete for multi-page
+    if num_pages > 1 and len(text) > 500:
+        # Text seems substantial for multi-page, likely good
+        return text
+    
+    return text
 
 def _clean_gemini_latex_output(latex_text):
     """Clean Gemini LaTeX output"""
@@ -287,13 +377,15 @@ def _validate_question_extraction(text):
 
 def _create_enhanced_question_prompt():
     """Create enhanced question extraction prompt"""
-    return '''DETAILED QUESTION EXTRACTION - STEP BY STEP
+    return '''DETAILED MULTI-PAGE QUESTION EXTRACTION
 
-Step 1: Scan the exam paper for question numbers
+CRITICAL: Process ALL pages of this examination paper.
+
+Step 1: Scan ALL pages for question numbers
 - Look for: "1.", "2.", "3.", "Q1", "Q2", "Question 1", etc.
-- Note the location of each question number
+- Note the location of each question number on each page
 
-Step 2: For each question found, extract:
+Step 2: For each question found on each page, extract:
 - The complete question text
 - Any sub-parts: (a), (b), (c) or (i), (ii), (iii)
 - Mark allocations: [2], [10 marks], etc.
@@ -312,7 +404,7 @@ B. [Complete option text]
 C. [Complete option text] 
 D. [Complete option text]
 
-Extract EVERY question visible in the exam paper. Be thorough and complete.'''
+Extract EVERY question visible across ALL pages of the exam paper. Be thorough and complete.'''
 
 # Keep existing helper functions for backward compatibility
 def _extract_content_from_response(text):

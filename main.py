@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Keep your original utility imports
-from utils.ocr_openai import pdf_to_images, gpt4o_extract_answer_latex
+from utils.ocr_openai import pdf_to_images, gpt4o_extract_answer_latex, gpt4o_extract_questions
 from utils.ocr_gemini import gemini_extract_answer_latex, gemini_extract_question_text
 
 # Import agentic components
@@ -53,7 +53,7 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
     """Extract questions using agentic system with proper model selection"""
     try:
         if AGENTIC_AVAILABLE:
-            print("Using agentic system for question extraction...")
+            print("🤖 Using agentic system for question extraction...")
             
             # Run the agentic analysis and extraction
             loop = asyncio.new_event_loop()
@@ -72,14 +72,13 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
                 analysis_result = loop.run_until_complete(analyzer.execute(analysis_task))
                 
                 if not analysis_result.success:
-                    print(f"Analysis failed: {analysis_result.error}")
+                    print(f"❌ Analysis failed: {analysis_result.error}")
                     raise Exception(f"Document analysis failed: {analysis_result.error}")
                 
                 # Use the agentic system's recommendation - NO OVERRIDE
                 strategy = analysis_result.data["strategy"]
                 recommended_model = strategy["recommended_model"]
-                print(f"Agentic system recommends: {recommended_model}")
-                print(f"Using agentic recommendation: {recommended_model}")
+                print(f"🎯 Agentic system recommends: {recommended_model}")
                 
                 # Extract questions using the recommended model
                 extraction_task = {
@@ -89,39 +88,33 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
                 extraction_result = loop.run_until_complete(extractor.execute(extraction_task))
                 
                 if extraction_result.success:
-                    print("Agentic extraction successful!")
+                    print("✅ Agentic extraction successful!")
                     question_text = extraction_result.data["question_text"]
+                    pages_processed = extraction_result.data.get("pages_processed", 1)
                     
-                    # Validate extracted questions
-                    if len(question_text.strip()) < 100:
-                        print("Warning: Question text seems too short, retrying with fallback model...")
-                        # Only now use fallback model if agentic fails
+                    print(f"📊 Extraction Summary:")
+                    print(f"   • Pages processed: {pages_processed}")
+                    print(f"   • Total characters: {len(question_text)}")
+                    print(f"   • Model used: {extraction_result.data['model_used']}")
+                    print(f"   • Confidence: {extraction_result.confidence:.2f}")
+                    
+                    # Enhanced validation for multi-page content
+                    validation_result = _validate_extracted_questions(question_text, pages_processed)
+                    
+                    if not validation_result["is_valid"]:
+                        print("⚠️ Validation failed, retrying with fallback model...")
                         strategy["recommended_model"] = fallback_model
                         extraction_task["strategy"] = strategy
                         retry_result = loop.run_until_complete(extractor.execute(extraction_task))
                         if retry_result.success:
                             question_text = retry_result.data["question_text"]
+                            print(f"✅ Fallback extraction successful with {fallback_model}")
                         else:
                             raise Exception("Both agentic and fallback extraction failed")
                     
-                    # Check for actual question content
-                    question_patterns = [r'Question\s+\d+', r'Q\d+', r'^\d+[\.:]\s', r'\(\w\)']
-                    has_questions = any(re.search(pattern, question_text, re.MULTILINE | re.IGNORECASE) 
-                                      for pattern in question_patterns)
-                    
-                    if not has_questions:
-                        print("Warning: No clear question patterns found, retrying with fallback model...")
-                        strategy["recommended_model"] = fallback_model
-                        extraction_task["strategy"] = strategy
-                        retry_result = loop.run_until_complete(extractor.execute(extraction_task))
-                        if retry_result.success:
-                            question_text = retry_result.data["question_text"]
-                        else:
-                            raise Exception("No clear questions found in either attempt")
-                    
                     return question_text
                 else:
-                    print(f"Agentic extraction failed: {extraction_result.error}")
+                    print(f"❌ Agentic extraction failed: {extraction_result.error}")
                     raise Exception(f"Agentic extraction failed: {extraction_result.error}")
                     
             finally:
@@ -131,21 +124,55 @@ def extract_question_text(pdf_path: str, fallback_model: str = "gemini"):
             raise Exception("Agentic system not available")
             
     except Exception as e:
-        print(f"Agentic extraction failed, using enhanced fallback method: {e}")
+        print(f"❌ Agentic extraction failed, using enhanced fallback method: {e}")
         return _enhanced_extract_question_text(pdf_path, fallback_model)
 
+def _validate_extracted_questions(question_text: str, num_pages: int) -> dict:
+    """Validate extracted questions for multi-page completeness"""
+    validation = {
+        "is_valid": True,
+        "issues": []
+    }
+    
+    if not question_text or len(question_text.strip()) < 100:
+        validation["is_valid"] = False
+        validation["issues"].append("Text too short")
+        return validation
+    
+    # Check for reasonable content per page
+    if num_pages > 1:
+        expected_min_length = num_pages * 150
+        if len(question_text) < expected_min_length:
+            validation["is_valid"] = False
+            validation["issues"].append(f"Insufficient content for {num_pages} pages")
+    
+    # Check for question patterns
+    import re
+    question_count = len(re.findall(r'Question\s+\d+', question_text, re.IGNORECASE))
+    
+    if question_count == 0:
+        validation["is_valid"] = False
+        validation["issues"].append("No questions detected")
+    elif num_pages > 1 and question_count < 2:
+        validation["is_valid"] = False
+        validation["issues"].append("Too few questions for multi-page document")
+    
+    return validation
+
 def _enhanced_extract_question_text(pdf_path: str, model: str = "gemini"):
-    """Enhanced question extraction method with better prompts"""
+    """Enhanced question extraction method with multi-page support"""
     try:
-        print(f"Converting PDF to images: {pdf_path}")
+        print(f"📄 Converting PDF to images: {pdf_path}")
         image_paths = pdf_to_images(pdf_path)
-        print(f"Generated {len(image_paths)} images")
+        print(f"🖼️ Generated {len(image_paths)} images from PDF")
         
-        enhanced_prompt = '''COMPREHENSIVE QUESTION EXTRACTION FROM EXAMINATION PAPER
+        enhanced_prompt = '''COMPREHENSIVE MULTI-PAGE QUESTION EXTRACTION
 
-You are extracting questions from an academic examination. Extract EVERY question that students need to answer.
+You are extracting questions from a complete academic examination that may span multiple pages.
 
-WHAT TO FIND:
+CRITICAL: Process ALL pages provided. This examination paper has multiple pages - extract questions from EVERY page.
+
+WHAT TO FIND ACROSS ALL PAGES:
 1. Question numbers: "1.", "2.", "Q1", "Q2", "Question 1", "Question 2", etc.
 2. Sub-questions: (a), (b), (c), (i), (ii), (iii), (1), (2), (3)
 3. Mark allocations: [2 marks], [10], (5), etc.
@@ -156,7 +183,7 @@ WHAT TO FIND:
    - References to figures/diagrams
    - Instructions within questions
 
-FORMAT REQUIREMENTS:
+FORMAT REQUIREMENTS FOR ALL PAGES:
 Question 1: [Complete question text including all details] [marks if shown]
 (a) [Sub-question text if any]
 (b) [Sub-question text if any]
@@ -167,54 +194,65 @@ B. [Option B text]
 C. [Option C text]  
 D. [Option D text]
 
-Question 3: [Continue for all questions...]
+Question 3: [Continue for all questions from all pages...]
 
-IGNORE:
+IGNORE ON ALL PAGES:
 - Header information (Institution name, course codes)
 - Exam metadata (Date, time, duration, total marks)
 - General instructions not part of specific questions
 - Page numbers and footers
 
-CRITICAL: Extract the COMPLETE question text for each question. Include mathematical expressions, all sub-parts, and detailed descriptions. Do not summarize or shorten questions.
+CRITICAL: Extract the COMPLETE question text for each question from ALL pages. Include mathematical expressions, all sub-parts, and detailed descriptions. Do not summarize or shorten questions.
 
-Output only the extracted questions in the specified format.'''
+Process ALL pages and output only the extracted questions in the specified format.'''
         
-        print(f"Sending to {model.upper()} for enhanced question extraction...")
+        print(f"🤖 Sending {len(image_paths)} pages to {model.upper()} for enhanced question extraction...")
+        
         if model == "gemini":
             result = gemini_extract_question_text(image_paths, enhanced_prompt)
         else:
-            result = gpt4o_extract_answer_latex(image_paths, question_text="", prompt=enhanced_prompt)
+            result = gpt4o_extract_questions(image_paths, enhanced_prompt)
+        
+        print(f"📝 {model.upper()} returned {len(result)} characters")
         
         # Post-process and validate result
         if not result or len(result.strip()) < 50:
-            print("First attempt produced insufficient content, trying alternative approach...")
+            print("⚠️ First attempt produced insufficient content, trying alternative approach...")
             
             # Try with more specific prompt
-            fallback_prompt = '''Extract exam questions step by step:
+            fallback_prompt = '''Extract exam questions step by step from ALL pages:
 
-1. Look for numbered items: 1., 2., 3., Q1, Q2, Question 1, etc.
-2. Extract the complete text for each numbered question
+1. Look for numbered items across all pages: 1., 2., 3., Q1, Q2, Question 1, etc.
+2. Extract the complete text for each numbered question from every page
 3. Include any sub-parts like (a), (b), (c)
 4. Include mark allocations like [2], [10 marks], (5 marks)
 5. For multiple choice, include all A, B, C, D options
 
 Format as:
-Question 1: [Full question]
-Question 2: [Full question] 
+Question 1: [Full question from page where found]
+Question 2: [Full question from page where found] 
 etc.
 
-Extract ALL questions completely and accurately.'''
+Extract ALL questions from ALL pages completely and accurately.'''
             
             if model == "gemini":
                 result = gemini_extract_question_text(image_paths, fallback_prompt)
             else:
-                result = gpt4o_extract_answer_latex(image_paths, question_text="", prompt=fallback_prompt)
+                result = gpt4o_extract_questions(image_paths, fallback_prompt)
+            
+            print(f"📝 Fallback attempt returned {len(result)} characters")
         
-        print("Enhanced question extraction complete")
+        # Final validation
+        final_validation = _validate_extracted_questions(result, len(image_paths))
+        if final_validation["is_valid"]:
+            print("✅ Enhanced question extraction complete and validated")
+        else:
+            print(f"⚠️ Validation issues: {final_validation['issues']}")
+        
         return result if result and len(result.strip()) > 50 else "Error: Could not extract questions from the provided PDF"
         
     except Exception as e:
-        print(f"Error in _enhanced_extract_question_text: {e}")
+        print(f"❌ Error in _enhanced_extract_question_text: {e}")
         print(traceback.format_exc())
         return f"Error extracting questions: {str(e)}"
 
@@ -225,11 +263,11 @@ def process_student_pdf(filename: str, question_text: str, output_folder: str, f
         local_path = os.path.join("uploads/students_data", filename)
         
         if not os.path.exists(local_path):
-            print(f"File not found: {local_path}")
+            print(f"❌ File not found: {local_path}")
             return None
         
         if AGENTIC_AVAILABLE:
-            print(f"Processing {student_name} with agentic system...")
+            print(f"🤖 Processing {student_name} with agentic system...")
             
             # Use agentic processing with proper model selection
             loop = asyncio.new_event_loop()
@@ -249,38 +287,38 @@ def process_student_pdf(filename: str, question_text: str, output_folder: str, f
                 if analysis_result.success:
                     strategy = analysis_result.data["strategy"]
                     recommended_model = strategy["recommended_model"]
-                    print(f"Agentic system recommends for answer processing: {recommended_model}")
+                    print(f"🎯 Agentic system recommends for answer processing: {recommended_model}")
                     
                     # Use the recommended model for processing
                     return _enhanced_process_student_pdf(filename, question_text, output_folder, recommended_model)
                 else:
-                    print("Analysis failed, using fallback model")
+                    print("⚠️ Analysis failed, using fallback model")
                     return _enhanced_process_student_pdf(filename, question_text, output_folder, fallback_model)
                     
             finally:
                 loop.close()
         else:
-            print("Using enhanced processing method")
+            print("🔧 Using enhanced processing method")
             return _enhanced_process_student_pdf(filename, question_text, output_folder, fallback_model)
             
     except Exception as e:
-        print(f"Error in agentic student processing: {e}")
+        print(f"❌ Error in agentic student processing: {e}")
         return _enhanced_process_student_pdf(filename, question_text, output_folder, fallback_model)
 
 def _enhanced_process_student_pdf(filename: str, question_text: str, output_folder: str, model: str = "gemini"):
     """Enhanced processing with better question-answer mapping"""
     try:
         student_name = os.path.splitext(filename)[0]
-        print(f"Enhanced processing: {student_name} with {model.upper()}")
+        print(f"🔧 Enhanced processing: {student_name} with {model.upper()}")
 
         local_path = os.path.join("uploads/students_data", filename)
         if not os.path.exists(local_path):
-            print(f"File not found: {local_path}")
+            print(f"❌ File not found: {local_path}")
             return None
             
-        print("Converting student PDF to images...")
+        print("📄 Converting student PDF to images...")
         image_pages = pdf_to_images(local_path)
-        print(f"Generated {len(image_pages)} pages")
+        print(f"🖼️ Generated {len(image_pages)} pages")
 
         # Enhanced prompt with better question-answer mapping
         enhanced_prompt = f'''Create a comprehensive LaTeX document that maps student answers to exam questions.
@@ -333,23 +371,23 @@ QUESTION PAPER CONTENT:
 STUDENT ANSWER SHEET:
 Now examine the answer sheet images and create the complete LaTeX document.'''
 
-        print(f"Extracting answers with enhanced mapping using {model.upper()}...")
+        print(f"🤖 Extracting answers with enhanced mapping using {model.upper()}...")
         if model == "gemini":
             latex_output = gemini_extract_answer_latex(image_pages, question_text, enhanced_prompt)
         else:
             latex_output = gpt4o_extract_answer_latex(image_pages, question_text, enhanced_prompt)
 
-        print("Raw AI output preview:", latex_output[:300] if latex_output else "No output")
+        print(f"📝 Raw AI output preview: {latex_output[:300] if latex_output else 'No output'}...")
         
         # Enhanced cleaning and validation
         latex_output = enhanced_clean_latex_output(latex_output, question_text, student_name)
         
         tex_path = os.path.join(output_folder, f"{student_name}_answers.tex")
-        print(f"Writing enhanced LaTeX to: {tex_path}")
+        print(f"💾 Writing enhanced LaTeX to: {tex_path}")
         with open(tex_path, "w", encoding="utf-8") as f:
             f.write(latex_output)
 
-        print("Compiling LaTeX to PDF...")
+        print("🔨 Compiling LaTeX to PDF...")
         compile_command = [
             "pdflatex",
             "-interaction=nonstopmode",
@@ -366,8 +404,8 @@ Now examine the answer sheet images and create the complete LaTeX document.'''
         pdf_path = os.path.join(output_folder, f"{student_name}_answers.pdf")
         
         if not os.path.exists(pdf_path):
-            print(f"LaTeX compile error: {result.stderr}")
-            print(f"LaTeX stdout: {result.stdout}")
+            print(f"❌ LaTeX compile error: {result.stderr}")
+            print(f"📋 LaTeX stdout: {result.stdout}")
             
             # Create enhanced fallback PDF
             error_latex = create_enhanced_fallback_latex(
@@ -381,10 +419,10 @@ Now examine the answer sheet images and create the complete LaTeX document.'''
             # Try compiling the fallback
             fallback_result = subprocess.run(compile_command, capture_output=True, text=True)
             if fallback_result.returncode != 0 or not os.path.exists(pdf_path):
-                print("Even enhanced fallback compilation failed")
+                print("❌ Even enhanced fallback compilation failed")
                 return None
             
-        print(f"PDF generated for {student_name}")
+        print(f"✅ PDF generated for {student_name}")
 
         # Cleanup temporary files
         base_name = f"{student_name}_answers"
@@ -396,12 +434,12 @@ Now examine the answer sheet images and create the complete LaTeX document.'''
                 if os.path.exists(cleanup_file):
                     os.remove(cleanup_file)
             except Exception as e:
-                print(f"Could not remove {cleanup_file}: {e}")
+                print(f"⚠️ Could not remove {cleanup_file}: {e}")
 
         return f"{student_name}_answers.pdf"
         
     except Exception as e:
-        print(f"Error in _enhanced_process_student_pdf: {e}")
+        print(f"❌ Error in _enhanced_process_student_pdf: {e}")
         print(traceback.format_exc())
         return None
 
@@ -427,19 +465,19 @@ def enhanced_clean_latex_output(latex_text: str, question_text: str, student_nam
         if match:
             latex_text = match.group(0)
         else:
-            print("WARNING: Invalid LaTeX output detected, creating enhanced fallback document")
+            print("⚠️ Invalid LaTeX output detected, creating enhanced fallback document")
             return create_enhanced_fallback_latex(latex_text[:1000] + "..." if len(latex_text) > 1000 else latex_text, question_text, student_name)
     
     # Validate basic LaTeX structure
     required_elements = ["\\begin{document}", "\\end{document}"]
     for element in required_elements:
         if element not in latex_text:
-            print(f"WARNING: Missing {element}, creating enhanced fallback")
+            print(f"⚠️ Missing {element}, creating enhanced fallback")
             return create_enhanced_fallback_latex(latex_text[:1000] + "..." if len(latex_text) > 1000 else latex_text, question_text, student_name)
     
     # Check if questions are properly included
     if "Question" not in latex_text and "question" not in latex_text:
-        print("WARNING: No questions found in output, enhancing with question content")
+        print("⚠️ No questions found in output, enhancing with question content")
         return enhance_latex_with_questions(latex_text, question_text, student_name)
     
     return latex_text
@@ -488,7 +526,7 @@ The student's responses have been extracted from the answer sheet. The AI system
         return enhanced_doc
         
     except Exception as e:
-        print(f"Error enhancing LaTeX: {e}")
+        print(f"❌ Error enhancing LaTeX: {e}")
         return create_enhanced_fallback_latex("Error enhancing document", question_text, student_name)
 
 def create_enhanced_fallback_latex(content: str, question_text: str, student_name: str) -> str:
