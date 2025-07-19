@@ -1,435 +1,175 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Answer Processing Results</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Results - Agentic Answer Sheet Processor</title>
     <style>
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            margin: 0;
-            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
         }
         .container {
-            background: rgba(255,255,255,0.98);
-            max-width: 1600px;
-            margin: 20px auto;
-            border-radius: 18px;
-            box-shadow: 0 15px 40px rgba(0,0,0,0.12);
-            padding: 40px 30px;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 20px;
-        }
-        .header h1 {
-            color: #2d3748;
-            font-size: 2.2rem;
-            margin-bottom: 10px;
-            font-weight: 700;
-        }
-        .header .subtitle {
-            color: #718096;
-            font-size: 1.1rem;
-            margin-bottom: 15px;
-        }
-        .processing-info {
-            background: #f7fafc;
-            border-left: 4px solid #667eea;
-            padding: 15px 20px;
-            margin-bottom: 30px;
-            border-radius: 0 8px 8px 0;
-        }
-        .processing-info h3 {
-            margin: 0 0 10px 0;
-            color: #2d3748;
-            font-size: 1.1rem;
-        }
-        .processing-info p {
-            margin: 5px 0;
-            color: #4a5568;
-            font-size: 0.95rem;
-        }
-        .results-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 25px;
-            margin-bottom: 40px;
-            align-items: start;
-        }
-        .pdf-section {
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-            overflow: hidden;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        .pdf-section:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
-        }
-        .pdf-header {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 15px 20px;
-            font-weight: 600;
-            font-size: 1.1rem;
-            text-align: center;
-        }
-        .pdf-viewer {
-            position: relative;
-            height: 600px;
-            background: #f8fafc;
-        }
-        .pdf-viewer iframe {
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             width: 100%;
-            height: 100%;
-            border: none;
-            display: none;
+            max-width: 600px;
+            padding: 30px;
         }
-        .pdf-viewer iframe.loaded {
-            display: block;
-        }
-        .loading-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #718096;
-        }
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #e2e8f0;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .error-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #e53e3e;
-            background: #fed7d7;
-            padding: 20px;
-            border-radius: 8px;
-            max-width: 80%;
-        }
-        .pdf-actions {
-            padding: 15px 20px;
-            background: #f8fafc;
-            border-top: 1px solid #e2e8f0;
+        h1 {
+            color: #2d3748;
+            font-size: 2rem;
+            margin-bottom: 20px;
             text-align: center;
         }
-        .download-btn {
+        .success-info {
             background: linear-gradient(135deg, #48bb78, #38a169);
             color: white;
-            padding: 10px 20px;
+            padding: 15px;
             border-radius: 8px;
-            text-decoration: none;
-            font-weight: 500;
-            display: inline-flex;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .success-info h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+        }
+        .success-info p {
+            margin: 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        .error-info {
+            background: linear-gradient(135deg, #f56565, #e53e3e);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .results-section {
+            margin-bottom: 25px;
+        }
+        .results-section h3 {
+            color: #4a5568;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .result-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 8px;
-            transition: all 0.2s ease;
         }
-        .download-btn:hover {
-            background: linear-gradient(135deg, #38a169, #2f855a);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+        .result-item .filename {
+            font-weight: 500;
+            color: #2d3748;
         }
-        .download-btn:active {
-            transform: translateY(0);
+        .result-item .actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+        .back-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 1rem;
+            margin-top: 20px;
+            display: block;
+            transition: all 0.3s ease;
+        }
+        .back-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
         .no-results {
             text-align: center;
-            padding: 60px 20px;
             color: #718096;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-        }
-        .no-results .icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
-        .no-results h3 {
-            color: #2d3748;
-            margin-bottom: 10px;
-            font-size: 1.4rem;
-        }
-        .no-results p {
-            font-size: 1.1rem;
-            line-height: 1.6;
-        }
-        .back-section {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 2px solid #e2e8f0;
-        }
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 500;
-            font-size: 1.1rem;
-            padding: 12px 24px;
-            border: 2px solid #667eea;
-            border-radius: 10px;
-            transition: all 0.3s ease;
-        }
-        .back-link:hover {
-            background: #667eea;
-            color: white;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
-        }
-        .stats-section {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-        }
-        .stat-item {
-            text-align: center;
-            padding: 15px;
-            background: #f7fafc;
-            border-radius: 8px;
-        }
-        .stat-value {
-            font-size: 2rem;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 5px;
-        }
-        .stat-label {
-            color: #718096;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        @media (max-width: 1200px) {
-            .results-grid { 
-                grid-template-columns: 1fr; 
-                gap: 20px; 
-            }
-            .container {
-                margin: 10px;
-                padding: 20px;
-            }
-            .pdf-viewer { 
-                height: 500px; 
-            }
-        }
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 1.8rem;
-            }
-            .pdf-viewer {
-                height: 400px;
-            }
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
+            font-style: italic;
+            margin: 40px 0;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>📄 Answer Sheet Processing Results</h1>
-            <div class="subtitle">Automated Analysis Complete</div>
-        </div>
+        <h1>🎯 Processing Results</h1>
         
-        {% if results and results|length > 0 %}
-            <div class="stats-section">
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-value">{{ results|length }}</div>
-                        <div class="stat-label">Files Processed</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">✓</div>
-                        <div class="stat-label">Processing Complete</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">PDF</div>
-                        <div class="stat-label">Output Format</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="processing-info">
-                <h3>📋 Processing Information</h3>
-                <p><strong>Question Paper:</strong> Successfully extracted and analyzed</p>
-                <p><strong>Student Answers:</strong> Handwriting recognized and formatted</p>
-                <p><strong>Output Format:</strong> Professional LaTeX-generated PDF documents</p>
-                <p><strong>Quality:</strong> High-resolution with mathematical expressions properly formatted</p>
-            </div>
-            
-            {% for file in results %}
-                {% if file %}
-                <div class="results-grid">
-                    <div class="pdf-section">
-                        <div class="pdf-header">📋 Question Paper</div>
-                        <div class="pdf-viewer">
-                            <div class="loading-indicator">
-                                <div class="loading-spinner"></div>
-                                <div>Loading question paper...</div>
-                            </div>
-                            <iframe src="{{ url_for('view_current_question') }}" 
-                                    onload="handlePdfLoad(this)" 
-                                    onerror="handlePdfError(this, 'Failed to load question paper')">
-                            </iframe>
-                        </div>
-                    </div>
-                    
-                    <div class="pdf-section">
-                        <div class="pdf-header">✍️ Student Answer Sheet</div>
-                        <div class="pdf-viewer">
-                            <div class="loading-indicator">
-                                <div class="loading-spinner"></div>
-                                <div>Loading student answers...</div>
-                            </div>
-                            <iframe src="{{ url_for('view_current_student') }}" 
-                                    onload="handlePdfLoad(this)" 
-                                    onerror="handlePdfError(this, 'Failed to load student answers')">
-                            </iframe>
-                        </div>
-                    </div>
-                    
-                    <div class="pdf-section">
-                        <div class="pdf-header">🔄 Processed Output</div>
-                        <div class="pdf-viewer">
-                            <div class="loading-indicator">
-                                <div class="loading-spinner"></div>
-                                <div>Loading processed document...</div>
-                            </div>
-                            <iframe src="{{ url_for('view_pdf', filename=file) }}" 
-                                    onload="handlePdfLoad(this)" 
-                                    onerror="handlePdfError(this, 'Failed to load processed output')">
-                            </iframe>
-                        </div>
-                        <div class="pdf-actions">
-                            <a href="{{ url_for('download', filename=file) }}" class="download-btn">
-                                <span>⬇️</span>
-                                <span>Download PDF</span>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-            {% endfor %}
+        {% if success %}
+        <div class="success-info">
+            <h3>✅ Processing Successful!</h3>
+            <p>Your documents have been processed using the agentic system</p>
+        </div>
         {% else %}
-            <div class="no-results">
-                <div class="icon">❌</div>
-                <h3>No Results Generated</h3>
-                <p>The processing system encountered an issue while generating the output documents.</p>
-                <p><strong>Possible causes:</strong></p>
-                <ul style="text-align: left; display: inline-block; margin-top: 15px;">
-                    <li>Poor image quality or unclear handwriting</li>
-                    <li>Unsupported file format or corrupted files</li>
-                    <li>AI model processing timeout</li>
-                    <li>LaTeX compilation errors</li>
-                </ul>
-                <p style="margin-top: 20px;">Please check your input files and try again with clearer images.</p>
-            </div>
-        {% endif %}
-        
-        <div class="back-section">
-            <a href="{{ url_for('index') }}" class="back-link">
-                <span>⬅️</span>
-                <span>Process Another Document</span>
-            </a>
+        <div class="error-info">
+            <h3>❌ Processing Failed</h3>
+            <p>There was an error processing your documents</p>
         </div>
-    </div>
+        {% endif %}
 
-    <script>
-        function handlePdfLoad(iframe) {
-            const viewer = iframe.parentElement;
-            const loading = viewer.querySelector('.loading-indicator');
-            const error = viewer.querySelector('.error-indicator');
-            
-            if (loading) loading.style.display = 'none';
-            if (error) error.style.display = 'none';
-            
-            iframe.style.display = 'block';
-            iframe.classList.add('loaded');
-        }
-        
-        function handlePdfError(iframe, errorMessage) {
-            const viewer = iframe.parentElement;
-            const loading = viewer.querySelector('.loading-indicator');
-            
-            if (loading) loading.style.display = 'none';
-            
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-indicator';
-            errorDiv.innerHTML = `
-                <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
-                <div style="font-weight: bold; margin-bottom: 8px;">Loading Error</div>
-                <div style="font-size: 0.9rem;">${errorMessage}</div>
-            `;
-            
-            viewer.appendChild(errorDiv);
-        }
-        
-        // Enhanced loading experience
-        document.addEventListener('DOMContentLoaded', function() {
-            const iframes = document.querySelectorAll('iframe');
-            
-            iframes.forEach(iframe => {
-                // Set a timeout for loading
-                setTimeout(() => {
-                    if (!iframe.classList.contains('loaded')) {
-                        handlePdfError(iframe, 'Loading timeout - please refresh the page');
-                    }
-                }, 10000); // 10 second timeout
-            });
-        });
-        
-        // Auto-refresh failed iframes on click
-        document.addEventListener('click', function(e) {
-            if (e.target.closest('.error-indicator')) {
-                const viewer = e.target.closest('.pdf-viewer');
-                const iframe = viewer.querySelector('iframe');
-                const error = viewer.querySelector('.error-indicator');
-                
-                if (error) error.remove();
-                
-                // Show loading again
-                const loading = document.createElement('div');
-                loading.className = 'loading-indicator';
-                loading.innerHTML = `
-                    <div class="loading-spinner"></div>
-                    <div>Retrying...</div>
-                `;
-                viewer.appendChild(loading);
-                
-                // Reload iframe
-                iframe.src = iframe.src;
-            }
-        });
-    </script>
+        {% if results %}
+        <div class="results-section">
+            <h3>📄 Generated Documents</h3>
+            {% for result in results %}
+            <div class="result-item">
+                <div class="filename">📄 {{ result }}</div>
+                <div class="actions">
+                    <a href="{{ url_for('view_pdf', filename=result) }}" class="btn btn-secondary" target="_blank">
+                        👁️ View
+                    </a>
+                    <a href="{{ url_for('download', filename=result) }}" class="btn btn-primary">
+                        📥 Download
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-results">
+            <p>No documents were generated.</p>
+        </div>
+        {% endif %}
+
+        <a href="{{ url_for('index') }}" class="back-btn">
+            🔄 Process Another Document
+        </a>
+    </div>
 </body>
 </html>

@@ -132,7 +132,7 @@ For each question below, show the question text followed by the student's answer
 \\end{{document}}
 
 QUESTION PAPER:
-{question_text[:2000] if question_text else "No questions provided"}
+{question_text if question_text else "No questions provided"}
 
 STUDENT ANSWER SHEET: Extract all student work and create the complete LaTeX document above."""
     
@@ -149,7 +149,7 @@ STUDENT ANSWER SHEET: Extract all student work and create the complete LaTeX doc
 [Extract all student handwriting and work]
 
 \\section{{Questions}}
-{question_text[:1000] if question_text else "Questions not available"}
+{question_text if question_text else "Questions not available"}
 
 \\end{{document}}
 

@@ -65,9 +65,11 @@ class ExamProcessingOrchestrator:
             
             # Step 3: Extract questions
             print("Step 3: Extracting questions...")
-            # Override model selection with user preference
+            # Use analyzer's recommendation or user preference
             q_strategy = q_analysis_result.data["strategy"].copy()
-            q_strategy["recommended_model"] = selected_model
+            if selected_model != "auto":
+                q_strategy["recommended_model"] = selected_model
+            # else: keep analyzer's recommendation
             
             question_result = await self._execute_agent(
                 "question_extractor",
@@ -82,9 +84,11 @@ class ExamProcessingOrchestrator:
             
             # Step 4: Process answers
             print("Step 4: Processing answer sheet...")
-            # Override model selection with user preference
+            # Use analyzer's recommendation or user preference
             a_strategy = a_analysis_result.data["strategy"].copy()
-            a_strategy["recommended_model"] = selected_model
+            if selected_model != "auto":
+                a_strategy["recommended_model"] = selected_model
+            # else: keep analyzer's recommendation
             
             answer_result = await self._execute_agent(
                 "answer_processor",

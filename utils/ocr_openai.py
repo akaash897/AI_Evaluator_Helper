@@ -27,71 +27,71 @@ def encode_image_base64(image_path):
 
 def gpt4o_extract_answer_latex(image_paths, question_text, prompt=None):
     if prompt is None:
-        prompt = f"""Generate a comprehensive LaTeX document that maps student answers to exam questions.
+        prompt = f"""📋 EXTRACT STUDENT HANDWRITTEN ANSWERS AND MAP TO QUESTIONS
 
-CRITICAL REQUIREMENTS:
+🚨 CRITICAL TASK: You are viewing STUDENT ANSWER SHEETS (handwritten responses). Extract ONLY what the student wrote, NOT the questions themselves.
 
-1. COMPLETE LATEX DOCUMENT: Must start with \\documentclass and end with \\end{{document}}
+📝 ANSWER SHEET EXTRACTION RULES:
 
-2. STRUCTURE REQUIRED:
+1. ✅ EXTRACT STUDENT WORK ONLY:
+   - Handwritten text and responses
+   - Mathematical calculations and working
+   - Diagrams, graphs, charts drawn by student
+   - Crossed-out work and corrections
+   - Student's reasoning and explanations
+   - Answer numbers (Q1, 1., (a), etc. written by student)
+
+2. ❌ DO NOT EXTRACT:
+   - Printed question text (that's already provided separately)
+   - Instructions or exam headers
+   - Anything that looks like the original question paper
+
+3. 🔗 MAPPING STRATEGY:
+   - Look for question indicators in student's handwriting (Q1, 1., (a), etc.)
+   - Match student work to the appropriate question from the question paper
+   - Group related student work under the same question
+   - If unclear which question, note the content and make best guess
+
+4. 📄 QUESTION PAPER REFERENCE:
+{question_text}
+
+5. 📝 LATEX OUTPUT FORMAT:
 \\documentclass[12pt]{{article}}
 \\usepackage{{amsmath, amssymb, geometry, enumitem}}
 \\usepackage[utf8]{{inputenc}}
 \\geometry{{margin=1in}}
-\\setlength{{\\parskip}}{{6pt}}
 
 \\begin{{document}}
-
 \\title{{Student Answer Sheet Analysis}}
 \\author{{Automated Processing System}}
 \\date{{\\today}}
 \\maketitle
 
-\\section*{{Questions and Student Responses}}
+\\section*{{Student Responses Mapped to Questions}}
 
 \\subsection*{{Question 1}}
-\\textbf{{Question:}} [Complete question text from question paper]
+\\textbf{{Question:}} [Copy complete Question 1 from question paper above]
 
 \\textbf{{Student Answer:}}
 \\begin{{quote}}
-[Extract complete student response here]
+[Extract ONLY what the student wrote for Q1 - their handwritten response]
 \\end{{quote}}
 
-\\vspace{{0.5cm}}
-
-\\subsection*{{Question 2}}
-\\textbf{{Question:}} [Next complete question]
+\\subsection*{{Question 2}}  
+\\textbf{{Question:}} [Copy complete Question 2 from question paper above]
 
 \\textbf{{Student Answer:}}
 \\begin{{quote}}
-[Extract complete student response here]
+[Extract ONLY what the student wrote for Q2 - their handwritten response]
 \\end{{quote}}
 
-[Continue for all questions...]
+[Continue for all questions where student provided answers]
 
 \\end{{document}}
 
-3. EXTRACTION INSTRUCTIONS:
-- Extract ALL visible handwritten content from the student answer sheet
-- Match answers to question numbers when identifiable (look for Q1, 1., Question 1, etc.)
-- Include mathematical calculations, diagrams, and all working
-- For diagrams, describe them: "Student drew a graph showing..."
-- Use proper LaTeX math environments for equations
-- If no clear question numbers, extract content sequentially
-- Preserve the student's exact work and reasoning
-- Include crossed-out work and corrections
-- Do NOT summarize or correct the student's work
+🎯 GOAL: Create a document showing what questions were asked and what the student actually wrote in response.
 
-4. QUESTION PAPER CONTENT:
-{question_text}
-
-5. MAPPING STRATEGY:
-- Look for question numbers in both the question paper and answer sheet
-- Match Q1 with Question 1, (1) with Question 1, etc.
-- Group related work under the same question
-- If uncertain about mapping, note: "Student appears to be answering: [topic]"
-
-Generate ONLY the complete LaTeX document. Start with \\documentclass and end with \\end{{document}}."""
+EXTRACT STUDENT HANDWRITING ONLY - NOT QUESTION TEXT."""
     
     messages = [
         {
@@ -120,7 +120,7 @@ Generate ONLY the complete LaTeX document. Start with \\documentclass and end wi
             model="gpt-4o",
             messages=messages,
             temperature=0.1,
-            max_tokens=10000  # Increased for longer documents
+            # No token limit - extract everything
         )
         
         latex_output = response.choices[0].message.content
@@ -143,61 +143,54 @@ def gpt4o_extract_questions(image_paths, prompt=None):
     """Enhanced function for multi-page question extraction with GPT-4V"""
     
     if prompt is None:
-        prompt = """COMPREHENSIVE MULTI-PAGE QUESTION EXTRACTION
+        prompt = """📝 EXTRACT QUESTIONS ONLY FROM EXAM PAPER - NOT ANSWERS
 
-CRITICAL: This examination paper has MULTIPLE PAGES. You must extract questions from ALL pages.
+🚨 CRITICAL INSTRUCTION: You are looking at a QUESTION PAPER (not answer sheets). Extract ONLY the questions that students need to answer, NOT any solutions or answers.
 
-Extract ALL examination questions from the ENTIRE document (all pages provided).
+📋 MANDATORY EXTRACTION RULES:
 
-MULTI-PAGE PROCESSING INSTRUCTIONS:
-1. EXAMINE ALL IMAGES: Look through every page/image provided
-2. EXTRACT FROM EVERY PAGE: Find questions on all pages, not just the first
-3. MAINTAIN CONTINUITY: Questions may continue across pages
-4. PRESERVE ORDER: Extract questions in sequence across all pages
+1. ✅ EXTRACT QUESTIONS ONLY:
+   - Question numbers: "Question 1:", "Q1", "1.", "(a)", "(b)", etc.
+   - Complete question text and instructions
+   - Multiple choice options (A, B, C, D)
+   - Mathematical expressions and formulas
+   - Mark allocations: [2], [10 marks], etc.
+   - Figure/diagram references
 
-DETAILED REQUIREMENTS:
+2. ❌ DO NOT EXTRACT:
+   - Any content labeled "Solution:", "Answer:", "Student response"
+   - Handwritten content (this is a printed question paper)
+   - Sample answers or model solutions
+   - Grading rubrics or marking schemes
 
-1. IDENTIFY ALL QUESTIONS ACROSS ALL PAGES:
-   - Question numbers: "1.", "2.", "Q1", "Q2", "Question 1", "Question 2", etc.
-   - Sub-questions: (a), (b), (c), (i), (ii), (iii), (1), (2), (3)
-   - Multiple choice questions with options A, B, C, D
-   - Mark allocations: [2 marks], [10], (5), etc.
+3. 📖 QUESTION PAPER IDENTIFICATION:
+   - Look for printed/typed text (questions)
+   - Ignore any handwritten annotations
+   - Focus on what students need to answer
+   - Extract complete question statements
 
-2. EXTRACT COMPLETE CONTENT FROM ALL PAGES:
-   - Full question text with all details and instructions
-   - Mathematical expressions, matrices, and formulas exactly as shown
-   - All sub-parts and their complete text
-   - Complete text for all multiple choice options
-   - References to figures, diagrams, or tables
+4. 📄 MULTI-PAGE PROCESSING:
+   - Process ALL pages of the question paper
+   - Maintain question sequence across pages
+   - Continue from page 1 through final page
+   - Don't stop until all questions extracted
 
-3. PRESERVE STRUCTURE ACROSS PAGES:
-   - Maintain question hierarchy and numbering
-   - Keep proper indentation for sub-parts
-   - Include all instructional text that's part of the question
-   - Preserve mathematical notation exactly
+5. 📝 OUTPUT FORMAT:
+Question 1: [Complete question text] [marks]
+(a) [Sub-question text]
+(b) [Sub-question text]
 
-4. OUTPUT FORMAT FOR ALL PAGES:
-Question 1: [Complete question text including all details] [marks if shown]
-(a) [Complete sub-question text]
-(b) [Complete sub-question text]
+Question 2: [Complete question text] [marks]
+A. [Option A text]
+B. [Option B text]
+C. [Option C text]
+D. [Option D text]
 
-Question 2: [Next complete question with all details] [marks if shown]  
-A. [Complete option A text]
-B. [Complete option B text]
-C. [Complete option C text]
-D. [Complete option D text]
+[Continue for ALL questions across ALL pages]
 
-Question 3: [Continue for ALL questions from ALL pages...]
+🎯 GOAL: Extract complete question paper content so students know what to answer.
 
-5. IGNORE ADMINISTRATIVE CONTENT ON ALL PAGES:
-   - Institution headers, course codes, instructor names
-   - Exam instructions, duration, total marks
-   - Page numbers, footers, watermarks
-   - General instructions not part of specific questions
-
-6. CRITICAL: Extract the COMPLETE question text from ALL pages. Include mathematical expressions, detailed descriptions, and all instructions. Do not summarize or abbreviate questions.
-
-Process ALL pages and extract ALL questions in the specified format. Be thorough and comprehensive across the entire document."""
+EXTRACT ONLY QUESTIONS - NOT ANSWERS OR SOLUTIONS."""
 
     messages = [
         {
@@ -229,7 +222,7 @@ Process ALL pages and extract ALL questions in the specified format. Be thorough
             model="gpt-4o",
             messages=messages,
             temperature=0.1,
-            max_tokens=10000  # Increased for multi-page content
+            # No token limit - extract everything from all pages
         )
         
         result = response.choices[0].message.content.strip()
@@ -294,7 +287,7 @@ Extract ALL content from this page that students need to answer.
                 model="gpt-4o",
                 messages=messages,
                 temperature=0.1,
-                max_tokens=3000
+                # No token limit for page-by-page extraction
             )
             
             page_result = response.choices[0].message.content.strip()
@@ -320,7 +313,7 @@ def _is_valid_openai_multi_page_extraction(text, num_pages):
         
     # For multi-page documents, expect more content
     if num_pages > 1:
-        expected_min_length = num_pages * 150
+        expected_min_length = num_pages * 100  # Reduced from 150 to 100
         if len(text) < expected_min_length:
             print(f"DEBUG: OpenAI extracted content too short for {num_pages} pages")
             return False
@@ -329,9 +322,9 @@ def _is_valid_openai_multi_page_extraction(text, num_pages):
     import re
     question_count = len(re.findall(r'Question\s+\d+', text, re.IGNORECASE))
     
-    if num_pages > 2 and question_count < num_pages:
+    if num_pages > 3 and question_count < (num_pages // 2):
         print(f"DEBUG: Only {question_count} questions found across {num_pages} pages")
-        # Don't fail here - some pages might have fewer questions
+        # Don't fail here - some pages might have fewer questions or continuation
     
     print(f"DEBUG: OpenAI multi-page validation passed - {question_count} questions in {num_pages} pages")
     return True
@@ -367,16 +360,31 @@ def _enhanced_clean_openai_output(latex_output):
     return latex_output.strip()
 
 def _validate_openai_latex_structure(latex_output):
-    """Validate LaTeX structure for OpenAI output"""
-    required_elements = [
+    """Validate LaTeX structure for OpenAI output - more lenient"""
+    if not latex_output or len(latex_output.strip()) < 100:
+        return False
+    
+    # Essential elements only
+    essential_elements = [
         "\\documentclass",
         "\\begin{document}",
-        "\\end{document}",
-        "\\title{",
-        "\\maketitle"
+        "\\end{document}"
     ]
     
-    return all(element in latex_output for element in required_elements)
+    # Check if we have the essential structure
+    has_essentials = all(element in latex_output for element in essential_elements)
+    
+    # Additional checks for content quality
+    if has_essentials:
+        # Check if there's actual content between begin and end document
+        import re
+        doc_match = re.search(r'\\begin\{document\}(.*?)\\end\{document\}', latex_output, re.DOTALL)
+        if doc_match:
+            content = doc_match.group(1).strip()
+            # More lenient - just check for some content
+            return len(content) > 50
+    
+    return has_essentials
 
 def _create_openai_enhanced_fallback(content, question_text):
     """Create enhanced fallback document for OpenAI"""

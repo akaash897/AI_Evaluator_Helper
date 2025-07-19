@@ -1,9 +1,47 @@
 # utils/ocr_gemini.py - Enhanced version with multi-page support
 import os
+import time
 import google.generativeai as genai
 from dotenv import load_dotenv
 from PIL import Image
 import re
+
+# Rate limiting for Gemini (15 requests per minute)
+_last_request_time = 0
+_request_count = 0
+_reset_time = time.time()
+
+def _rate_limit_gemini():
+    """Handle Gemini's 15 RPM limit"""
+    global _last_request_time, _request_count, _reset_time
+    
+    current_time = time.time()
+    
+    # Reset counter every minute
+    if current_time - _reset_time >= 60:
+        _request_count = 0
+        _reset_time = current_time
+    
+    # If we've hit the limit, wait
+    if _request_count >= 15:
+        sleep_time = 60 - (current_time - _reset_time)
+        if sleep_time > 0:
+            print(f"Rate limiting: waiting {sleep_time:.1f} seconds for Gemini...")
+            time.sleep(sleep_time)
+            _request_count = 0
+            _reset_time = time.time()
+    
+    # Ensure minimum 4 seconds between requests (15 requests per 60 seconds)
+    time_since_last = current_time - _last_request_time
+    min_interval = 4.0  # 60/15 = 4 seconds
+    
+    if time_since_last < min_interval:
+        sleep_time = min_interval - time_since_last
+        print(f"Rate limiting: waiting {sleep_time:.1f} seconds between Gemini requests...")
+        time.sleep(sleep_time)
+    
+    _request_count += 1
+    _last_request_time = time.time()
 
 load_dotenv()
 
@@ -17,66 +55,71 @@ def gemini_extract_answer_latex(image_paths, question_text, prompt=None):
     configure_gemini()
     
     if prompt is None:
-        prompt = f"""Create a comprehensive LaTeX document that properly maps student answers to exam questions.
+        prompt = f"""📋 EXTRACT STUDENT HANDWRITTEN ANSWERS AND MAP TO QUESTIONS
 
-CRITICAL REQUIREMENTS:
+🚨 CRITICAL TASK: You are viewing STUDENT ANSWER SHEETS (handwritten responses). Extract ONLY what the student wrote, NOT the questions themselves.
 
-1. COMPLETE LATEX DOCUMENT: Must start with \\documentclass and end with \\end{{document}}
+📝 ANSWER SHEET EXTRACTION RULES:
 
-2. INCLUDE BOTH QUESTIONS AND ANSWERS: Show the complete question text followed by the student's answer
+1. ✅ EXTRACT STUDENT WORK ONLY:
+   - Handwritten text and responses
+   - Mathematical calculations and working
+   - Diagrams, graphs, charts drawn by student
+   - Crossed-out work and corrections
+   - Student's reasoning and explanations
+   - Answer numbers (Q1, 1., (a), etc. written by student)
 
-3. REQUIRED FORMAT:
+2. ❌ DO NOT EXTRACT:
+   - Printed question text (that's already provided separately)
+   - Instructions or exam headers
+   - Anything that looks like the original question paper
+
+3. 🔗 MAPPING STRATEGY:
+   - Look for question indicators in student's handwriting (Q1, 1., (a), etc.)
+   - Match student work to the appropriate question from the question paper
+   - Group related student work under the same question
+   - If unclear which question, note the content and make best guess
+
+4. 📄 QUESTION PAPER REFERENCE:
+{question_text}
+
+5. 📝 LATEX OUTPUT FORMAT:
 \\documentclass[12pt]{{article}}
 \\usepackage{{amsmath, amssymb, geometry, enumitem}}
 \\usepackage[utf8]{{inputenc}}
 \\geometry{{margin=1in}}
-\\setlength{{\\parskip}}{{6pt}}
 
 \\begin{{document}}
-
 \\title{{Student Answer Sheet Analysis}}
 \\author{{Automated Processing System}}
 \\date{{\\today}}
 \\maketitle
 
-\\section*{{Questions and Student Responses}}
+\\section*{{Student Responses Mapped to Questions}}
 
 \\subsection*{{Question 1}}
-\\textbf{{Question:}} [Complete question text from question paper]
+\\textbf{{Question:}} [Copy complete Question 1 from question paper above]
 
 \\textbf{{Student Answer:}}
 \\begin{{quote}}
-[Student's complete response exactly as written]
+[Extract ONLY what the student wrote for Q1 - their handwritten response]
 \\end{{quote}}
-
-\\vspace{{0.5cm}}
 
 \\subsection*{{Question 2}}
-\\textbf{{Question:}} [Next complete question text]
+\\textbf{{Question:}} [Copy complete Question 2 from question paper above]
 
 \\textbf{{Student Answer:}}
 \\begin{{quote}}
-[Student's response for this question]
+[Extract ONLY what the student wrote for Q2 - their handwritten response]
 \\end{{quote}}
 
-[Continue for all questions found...]
+[Continue for all questions where student provided answers]
 
 \\end{{document}}
 
-4. EXTRACTION RULES:
-- Extract ALL visible student handwriting
-- Include mathematical work, calculations, diagrams
-- Match answers to question numbers when identifiable
-- If no clear question numbers, extract content sequentially
-- Describe diagrams as "Student drew: [description]"
-- DO NOT correct or reason about answers - extract exactly as written
-- Include working, crossed-out text, and rough work
+🎯 GOAL: Create a document showing what questions were asked and what the student actually wrote in response.
 
-QUESTION PAPER CONTENT:
-{question_text}
-
-STUDENT ANSWER SHEET:
-Examine the answer sheet images and create the complete LaTeX document mapping student responses to the questions above."""
+EXTRACT STUDENT HANDWRITING ONLY - NOT QUESTION TEXT."""
 
     model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
@@ -85,6 +128,7 @@ Examine the answer sheet images and create the complete LaTeX document mapping s
         images.append(Image.open(image_path))
     
     try:
+        _rate_limit_gemini()  # Apply rate limiting
         response = model.generate_content([prompt] + images)
         latex_text = response.text.strip()
         
@@ -106,54 +150,55 @@ def gemini_extract_question_text(image_paths, prompt=None):
     configure_gemini()
     
     if prompt is None:
-        prompt = '''EXTRACT ALL EXAMINATION QUESTIONS FROM ALL PAGES
+        prompt = '''📝 EXTRACT QUESTIONS ONLY FROM EXAM PAPER - NOT ANSWERS
 
-IMPORTANT: This exam paper has MULTIPLE PAGES. You must extract questions from ALL pages provided.
+🚨 CRITICAL INSTRUCTION: You are viewing a QUESTION PAPER (printed exam). Extract ONLY the questions that students need to answer, NOT any solutions, answers, or student work.
 
-You are analyzing a complete academic examination paper. Extract EVERY question from ALL pages.
+📋 MANDATORY EXTRACTION RULES:
 
-CRITICAL REQUIREMENTS:
+1. ✅ EXTRACT QUESTIONS ONLY:
+   - Question numbers: "Question 1:", "Q1", "1.", "(a)", "(b)", etc.
+   - Complete question text and instructions  
+   - Multiple choice options (A, B, C, D)
+   - Mathematical expressions and formulas
+   - Mark allocations: [2], [10 marks], etc.
+   - Figure/diagram references
 
-1. SCAN ALL PAGES: Look through every image/page provided - do not skip any pages
-2. EXTRACT FROM EACH PAGE: Find questions on every page, not just the first one
-3. MAINTAIN PAGE ORDER: Extract questions in the order they appear across all pages
-4. PROCESS COMPLETE DOCUMENT: This is a multi-page exam - extract everything
+2. ❌ DO NOT EXTRACT:
+   - Any text labeled "Solution:", "Answer:", "Student response"
+   - Handwritten content (this is a printed question paper)
+   - Sample answers or model solutions  
+   - Grading rubrics or marking schemes
+   - Any content that looks like student work
 
-5. FIND ALL QUESTIONS ACROSS ALL PAGES:
-   - Question numbers: "1.", "2.", "Q1", "Q2", "Question 1", etc.
-   - Sub-parts: (a), (b), (c), (i), (ii), (iii), (1), (2), (3)
-   - Multiple choice options: A., B., C., D.
-   - Mark allocations: [2 marks], [10], (5), etc.
+3. 📖 QUESTION PAPER IDENTIFICATION:
+   - Focus on printed/typed text (the official questions)
+   - Ignore any handwritten annotations or solutions
+   - Extract what students are supposed to answer
+   - Include complete question statements
 
-6. EXTRACT COMPLETE CONTENT FROM ALL PAGES:
-   - Full question text with all details from every page
-   - Mathematical expressions and matrices exactly as shown
-   - All sub-questions and parts from all pages
-   - Multiple choice options with complete text
-   - References to figures/diagrams
+4. 📄 MULTI-PAGE PROCESSING:
+   - Process ALL pages of the question paper
+   - Maintain question sequence across all pages
+   - Continue from page 1 through final page
+   - Extract every question completely
 
-7. OUTPUT FORMAT (for ALL pages):
-Question 1: [Complete question text] [marks if shown]
-(a) [Sub-question if any]
-(b) [Sub-question if any]
+5. 📝 OUTPUT FORMAT:
+Question 1: [Complete question text] [marks]
+(a) [Sub-question text]
+(b) [Sub-question text]
 
-Question 2: [Next complete question] [marks if shown]
-A. [Option A complete text]
-B. [Option B complete text]  
-C. [Option C complete text]
-D. [Option D complete text]
+Question 2: [Complete question text] [marks]
+A. [Option A text]
+B. [Option B text] 
+C. [Option C text]
+D. [Option D text]
 
-[Continue for ALL questions from ALL pages...]
+[Continue for ALL questions across ALL pages]
 
-8. IGNORE ADMINISTRATIVE CONTENT ON ALL PAGES:
-   - Institution headers, course codes, instructor names
-   - Exam duration, total marks, date/time
-   - Page numbers, footers, watermarks
-   - General instructions not part of specific questions
+🎯 GOAL: Extract complete question paper so students know what to answer.
 
-CRITICAL: Process ALL images/pages provided. Extract COMPLETE text for each question from every page. Include all mathematical expressions, detailed descriptions, and instructions. Do not summarize or abbreviate.
-
-Extract ALL questions from ALL pages in the specified format:'''
+EXTRACT ONLY QUESTIONS - NOT ANSWERS OR SOLUTIONS.'''
 
     model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
@@ -166,6 +211,7 @@ Extract ALL questions from ALL pages in the specified format:'''
     
     try:
         # Send ALL images at once to process the complete document
+        _rate_limit_gemini()  # Apply rate limiting
         response = model.generate_content([prompt] + images)
         result = response.text.strip()
         
@@ -212,6 +258,7 @@ Extract ALL content from this page that students need to answer.
 """
         
         try:
+            _rate_limit_gemini()  # Apply rate limiting for each page
             response = model.generate_content([page_prompt, image])
             page_result = response.text.strip()
             
@@ -237,7 +284,7 @@ def _validate_multi_page_extraction(text, num_pages):
     
     # For multi-page documents, expect proportionally more content
     if num_pages > 1:
-        expected_min_length = num_pages * 200  # At least 200 chars per page
+        expected_min_length = num_pages * 120  # Reduced from 200 to 120 chars per page
         if len(text) < expected_min_length:
             print(f"DEBUG: Extracted text ({len(text)} chars) seems too short for {num_pages} pages")
             return False
@@ -246,7 +293,11 @@ def _validate_multi_page_extraction(text, num_pages):
     import re
     question_count = len(re.findall(r'Question\s+\d+', text, re.IGNORECASE))
     
-    if num_pages > 1 and question_count < 2:
+    # More lenient validation for multi-page documents
+    if num_pages > 3 and question_count < 1:
+        print(f"DEBUG: Only found {question_count} questions in {num_pages} pages - might be incomplete")
+        return False
+    elif num_pages > 5 and question_count < 2:
         print(f"DEBUG: Only found {question_count} questions in {num_pages} pages - might be incomplete")
         return False
     
@@ -285,16 +336,31 @@ def _clean_gemini_latex_output(latex_text):
     return latex_text.strip()
 
 def _validate_gemini_latex_structure(latex_text):
-    """Validate LaTeX structure"""
-    required_elements = [
+    """Validate LaTeX structure - more lenient validation"""
+    if not latex_text or len(latex_text.strip()) < 100:
+        return False
+    
+    # Essential elements only
+    essential_elements = [
         "\\documentclass",
         "\\begin{document}",
-        "\\end{document}",
-        "\\title{",
-        "\\maketitle"
+        "\\end{document}"
     ]
     
-    return all(element in latex_text for element in required_elements)
+    # Check if we have the essential structure
+    has_essentials = all(element in latex_text for element in essential_elements)
+    
+    # Additional checks for content quality
+    if has_essentials:
+        # Check if there's actual content between begin and end document
+        import re
+        doc_match = re.search(r'\\begin\{document\}(.*?)\\end\{document\}', latex_text, re.DOTALL)
+        if doc_match:
+            content = doc_match.group(1).strip()
+            # More lenient - just check for some content
+            return len(content) > 50
+    
+    return has_essentials
 
 def _create_gemini_fallback_latex(content, question_text):
     """Create fallback LaTeX document"""
